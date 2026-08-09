@@ -322,15 +322,16 @@ a {
   padding: 0;
 }
 
-/* Dual-theme Shiki tokens from rehype-pretty-code */
-.prose-blog code[data-theme*=" "],
-.prose-blog code[data-theme*=" "] span {
+/* Dual-theme Shiki tokens from rehype-pretty-code.
+   Avoid attribute selectors with a space value — cssnano crashes on them. */
+.prose-blog [data-rehype-pretty-code-figure] code,
+.prose-blog [data-rehype-pretty-code-figure] code span {
   color: var(--shiki-light);
   background-color: var(--shiki-light-bg);
 }
 
-.dark .prose-blog code[data-theme*=" "],
-.dark .prose-blog code[data-theme*=" "] span {
+.dark .prose-blog [data-rehype-pretty-code-figure] code,
+.dark .prose-blog [data-rehype-pretty-code-figure] code span {
   color: var(--shiki-dark);
   background-color: var(--shiki-dark-bg);
 }
