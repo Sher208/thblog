@@ -10,6 +10,11 @@ function formatDate(date: Date | null) {
   }).format(date);
 }
 
+function toDateTime(date: Date | null) {
+  if (!date) return undefined;
+  return date.toISOString().slice(0, 10);
+}
+
 export function PostList({
   posts,
   emptyLabel = "No public posts yet.",
@@ -18,45 +23,60 @@ export function PostList({
   emptyLabel?: string;
 }) {
   if (!posts.length) {
-    return <p className="text-muted">{emptyLabel}</p>;
+    return <p className="py-8 text-muted">{emptyLabel}</p>;
   }
 
   return (
     <ul className="divide-y divide-border/80">
-      {posts.map((post, index) => (
-        <li
-          key={post.id}
-          className={`animate-fade-up py-6 stagger-${Math.min(index + 1, 3)}`}
-        >
-          <Link href={`/blog/${post.slug}`} className="group block">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-[family-name:var(--font-display)] text-xl tracking-tight text-foreground transition group-hover:text-accent sm:text-2xl">
-                {post.title}
-              </h2>
-              <time className="text-xs text-muted">
-                {formatDate(post.publishedAt ?? post.createdAt)}
-              </time>
-            </div>
-            {post.excerpt ? (
-              <p className="mt-2 max-w-xl text-[0.95rem] leading-relaxed text-muted">
-                {post.excerpt}
-              </p>
-            ) : null}
-            {post.tags.length ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {post.tags.map((tag) => (
-                  <span
-                    key={tag.id}
-                    className="text-xs tracking-wide text-accent"
+      {posts.map((post, index) => {
+        const date = post.publishedAt ?? post.createdAt;
+        return (
+          <li
+            key={post.id}
+            className={`animate-fade-up py-7 stagger-${Math.min(index + 1, 3)}`}
+          >
+            <article>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight sm:text-2xl">
+                  <Link
+                    href={`/blog/${post.slug}`}
+                    className="text-foreground no-underline transition hover:text-accent"
                   >
-                    {tag.name}
-                  </span>
-                ))}
+                    {post.title}
+                  </Link>
+                </h2>
+                {date ? (
+                  <time
+                    dateTime={toDateTime(date)}
+                    className="shrink-0 text-sm tabular-nums text-muted"
+                  >
+                    {formatDate(date)}
+                  </time>
+                ) : null}
               </div>
-            ) : null}
-          </Link>
-        </li>
-      ))}
+              {post.excerpt ? (
+                <p className="mt-2.5 max-w-xl text-base leading-relaxed text-muted">
+                  {post.excerpt}
+                </p>
+              ) : null}
+              {post.tags.length ? (
+                <ul className="mt-3.5 flex flex-wrap gap-x-3 gap-y-1.5">
+                  {post.tags.map((tag) => (
+                    <li key={tag.id}>
+                      <Link
+                        href={`/tags/${tag.slug}`}
+                        className="text-sm text-accent no-underline transition hover:underline"
+                      >
+                        {tag.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </article>
+          </li>
+        );
+      })}
     </ul>
   );
 }

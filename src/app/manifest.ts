@@ -4,12 +4,12 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "thblog",
     short_name: "thblog",
-    description: "A personal blog for notes and ideas",
+    description: "Fast mobile-first personal blog",
     start_url: "/",
     scope: "/",
     display: "standalone",
-    background_color: "#f4f6f8",
-    theme_color: "#0f6e6a",
+  background_color: "#f2f5f7",
+  theme_color: "#0c6561",
     orientation: "portrait-primary",
     icons: [
       {

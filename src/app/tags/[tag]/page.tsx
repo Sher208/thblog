@@ -22,15 +22,20 @@ export default async function TagPage({ params }: Props) {
 
   return (
     <div className="animate-fade-up">
-      <h1 className="font-[family-name:var(--font-display)] text-3xl tracking-tight">
-        {result.tag.name}
-      </h1>
-      <p className="mt-2 text-muted">
-        {result.posts.length} public{" "}
-        {result.posts.length === 1 ? "post" : "posts"}
-      </p>
-      <div className="mt-8">
-        <PostList posts={result.posts} emptyLabel="No public posts in this topic." />
+      <header className="border-b border-border/70 pb-8">
+        <h1 className="font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
+          {result.tag.name}
+        </h1>
+        <p className="mt-3 text-lg text-muted">
+          {result.posts.length} public{" "}
+          {result.posts.length === 1 ? "post" : "posts"}
+        </p>
+      </header>
+      <div className="mt-2">
+        <PostList
+          posts={result.posts}
+          emptyLabel="No public posts in this topic."
+        />
       </div>
     </div>
   );

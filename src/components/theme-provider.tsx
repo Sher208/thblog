@@ -10,6 +10,9 @@ import {
 
 type Theme = "light" | "dark";
 
+const THEME_KEY = "thblog-theme";
+const THEME_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
+
 const ThemeContext = createContext<{
   theme: Theme;
   setTheme: (theme: Theme) => void;
@@ -20,31 +23,52 @@ const ThemeContext = createContext<{
   ready: false,
 });
 
+function readCookieTheme(): Theme | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/(?:^|;\s*)thblog-theme=(light|dark)/);
+  return match ? (match[1] as Theme) : null;
+}
+
+function persistTheme(theme: Theme) {
+  try {
+    window.localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // ignore quota / private mode
+  }
+  document.cookie = `${THEME_KEY}=${theme}; path=/; max-age=${THEME_MAX_AGE}; SameSite=Lax`;
+  document.documentElement.classList.toggle("dark", theme === "dark");
+}
+
 function getInitialTheme(): Theme {
   if (typeof window === "undefined") return "light";
-  const stored = window.localStorage.getItem("thblog-theme");
-  if (stored === "light" || stored === "dark") return stored;
+  const fromCookie = readCookieTheme();
+  if (fromCookie) return fromCookie;
+  try {
+    const stored = window.localStorage.getItem(THEME_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+  } catch {
+    // ignore
+  }
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, setThemeState] = useState<Theme>("light");
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     const initial = getInitialTheme();
-    setTheme(initial);
-    document.documentElement.classList.toggle("dark", initial === "dark");
+    setThemeState(initial);
+    persistTheme(initial);
     setReady(true);
   }, []);
 
-  useEffect(() => {
-    if (!ready) return;
-    document.documentElement.classList.toggle("dark", theme === "dark");
-    window.localStorage.setItem("thblog-theme", theme);
-  }, [theme, ready]);
+  const setTheme = (next: Theme) => {
+    setThemeState(next);
+    persistTheme(next);
+  };
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme, ready }}>
@@ -59,15 +83,18 @@ export function useTheme() {
 
 export function ThemeToggle() {
   const { theme, setTheme, ready } = useTheme();
+  const isDark = theme === "dark";
+  const nextLabel = isDark ? "Switch to light theme" : "Switch to dark theme";
 
   return (
     <button
       type="button"
-      aria-label="Toggle color theme"
-      className="inline-flex h-9 items-center justify-center rounded-full border border-border px-3 text-xs font-medium tracking-wide text-muted transition hover:border-accent hover:text-foreground"
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      aria-label={ready ? nextLabel : "Toggle color theme"}
+      aria-pressed={isDark}
+      className="inline-flex min-h-10 items-center text-[0.8125rem] text-muted transition hover:text-foreground"
+      onClick={() => setTheme(isDark ? "light" : "dark")}
     >
-      {!ready ? "Theme" : theme === "dark" ? "Light" : "Dark"}
+      {!ready ? "Theme" : isDark ? "Light" : "Dark"}
     </button>
   );
 }

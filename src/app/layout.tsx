@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     default: "thblog",
     template: "%s · thblog",
   },
-  description: "A personal blog for writing, notes, and ideas.",
+  description: "A fast, mobile-first personal blog.",
   applicationName: "thblog",
   appleWebApp: {
     capable: true,
@@ -44,13 +44,15 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f4f6f8" },
-    { media: "(prefers-color-scheme: dark)", color: "#0d1117" },
+    { media: "(prefers-color-scheme: light)", color: "#f2f5f7" },
+    { media: "(prefers-color-scheme: dark)", color: "#0c1016" },
   ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
 };
+
+const themeBootScript = `(function(){try{var k='thblog-theme';var t=null;var m=document.cookie.match(/(?:^|;\\s*)thblog-theme=(light|dark)/);if(m)t=m[1];if(!t){try{t=localStorage.getItem(k)}catch(e){}}if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}if(t==='dark')document.documentElement.classList.add('dark');else document.documentElement.classList.remove('dark')}catch(e){}})();`;
 
 export default async function RootLayout({
   children,
@@ -64,14 +66,17 @@ export default async function RootLayout({
       <body
         className={`${display.variable} ${body.variable} ${mono.variable} antialiased`}
       >
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('thblog-theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();`,
-          }}
-        />
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
         <ThemeProvider>
+          <a href="#main-content" className="skip-link">
+            Skip to content
+          </a>
           <SiteHeader showAdmin={Boolean(session)} />
-          <main className="mx-auto min-h-[70dvh] max-w-3xl px-5 pt-10">
+          <main
+            id="main-content"
+            tabIndex={-1}
+            className="mx-auto min-h-[70dvh] max-w-3xl px-5 pt-8 outline-none sm:pt-10"
+          >
             {children}
           </main>
           <SiteFooter />
