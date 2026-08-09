@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import type { Visibility } from "@/lib/db/schema";
+import { toast } from "@/components/ui/toast";
 
 type AdminPost = {
   id: string;
@@ -22,20 +23,17 @@ export function AdminDashboard() {
   const [posts, setPosts] = useState<AdminPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
   const loadPosts = useCallback(async () => {
     setLoading(true);
-    setError(null);
     const res = await fetch("/api/posts");
     if (res.status === 401) {
       router.replace("/admin/login");
       return;
     }
     if (!res.ok) {
-      setError("Failed to load posts");
+      toast.add({ title: "Failed to load posts", type: "error" });
       setLoading(false);
       return;
     }
@@ -58,8 +56,6 @@ export function AdminDashboard() {
 
   async function uploadFile(file: File) {
     setUploading(true);
-    setMessage(null);
-    setError(null);
     const form = new FormData();
     form.append("file", file);
     const res = await fetch("/api/posts", { method: "POST", body: form });
@@ -68,11 +64,15 @@ export function AdminDashboard() {
       const data = (await res.json().catch(() => null)) as {
         error?: string;
       } | null;
-      setError(data?.error || "Upload failed");
+      toast.add({ title: data?.error || "Upload failed", type: "error" });
       return;
     }
     const data = (await res.json()) as { post: AdminPost };
-    setMessage(`Saved “${data.post.title}” (${data.post.visibility})`);
+    toast.add({
+      title: `Saved “${data.post.title}”`,
+      description: data.post.visibility,
+      type: "success",
+    });
     await loadPosts();
   }
 
@@ -90,9 +90,13 @@ export function AdminDashboard() {
       body: JSON.stringify({ id: post.id, visibility }),
     });
     if (!res.ok) {
-      setError("Could not update visibility");
+      toast.add({ title: "Could not update visibility", type: "error" });
       return;
     }
+    toast.add({
+      title: `Made “${post.title}” ${visibility}`,
+      type: "success",
+    });
     await loadPosts();
   }
 
@@ -102,9 +106,10 @@ export function AdminDashboard() {
       method: "DELETE",
     });
     if (!res.ok) {
-      setError("Could not delete post");
+      toast.add({ title: "Could not delete post", type: "error" });
       return;
     }
+    toast.add({ title: `Deleted “${post.title}”`, type: "success" });
     await loadPosts();
   }
 
@@ -122,7 +127,8 @@ export function AdminDashboard() {
             Admin
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Upload Markdown, convert to posts, toggle public / private.
+            Upload Markdown, convert to posts, toggle public / private. Open a
+            post to edit side by side.
           </p>
         </div>
         <button
@@ -175,11 +181,6 @@ export function AdminDashboard() {
         />
       </section>
 
-      {message ? (
-        <p className="mt-4 text-sm text-primary">{message}</p>
-      ) : null}
-      {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
-
       <section className="mt-10">
         <h2 className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
           All posts
@@ -196,7 +197,7 @@ export function AdminDashboard() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <Link
-                      href={`/blog/${post.slug}`}
+                      href={`/blog/${post.slug}?edit=1`}
                       className="truncate font-[family-name:var(--font-display)] text-lg hover:text-primary"
                     >
                       {post.title}
@@ -239,7 +240,9 @@ export function AdminDashboard() {
           </ul>
         )}
         {!loading && !posts.length ? (
-          <p className="mt-4 text-muted-foreground">No posts yet — upload a Markdown file.</p>
+          <p className="mt-4 text-muted-foreground">
+            No posts yet — upload a Markdown file.
+          </p>
         ) : null}
       </section>
     </div>
