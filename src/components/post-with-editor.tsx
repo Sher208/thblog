@@ -59,7 +59,7 @@ type PostVersionItem = {
 };
 
 const AUTOSAVE_MS = 60 * 1000;
-const PREVIEW_DEBOUNCE_MS = 120;
+const PREVIEW_DEBOUNCE_MS = 280;
 
 /** Scroll one pane to match another by percentage (avoids feedback loops via lock). */
 function syncScrollByRatio(

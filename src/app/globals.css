@@ -264,11 +264,35 @@ a {
 
 .prose-blog ul,
 .prose-blog ol {
-  padding-left: 1.35rem;
+  padding-left: 1.5rem;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
+.prose-blog ul {
+  list-style-type: disc;
+}
+
+.prose-blog ol {
+  list-style-type: decimal;
+}
+
+.prose-blog ul ul {
+  list-style-type: circle;
+}
+
+.prose-blog ul ul ul {
+  list-style-type: square;
 }
 
 .prose-blog li + li {
   margin-top: 0.45em;
+}
+
+.prose-blog li > ul,
+.prose-blog li > ol {
+  margin-top: 0.45em;
+  margin-bottom: 0.45em;
 }
 
 .prose-blog code:not(pre code) {
@@ -298,14 +322,17 @@ a {
   padding: 0;
 }
 
-.prose-blog pre [data-theme="dark"],
-.dark .prose-blog pre [data-theme="light"] {
-  display: none;
+/* Dual-theme Shiki tokens from rehype-pretty-code */
+.prose-blog code[data-theme*=" "],
+.prose-blog code[data-theme*=" "] span {
+  color: var(--shiki-light);
+  background-color: var(--shiki-light-bg);
 }
 
-.dark .prose-blog pre [data-theme="dark"],
-html:not(.dark) .prose-blog pre [data-theme="light"] {
-  display: block;
+.dark .prose-blog code[data-theme*=" "],
+.dark .prose-blog code[data-theme*=" "] span {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg);
 }
 
 .prose-blog blockquote {

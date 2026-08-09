@@ -8,6 +8,7 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import type { Root as MdastRoot } from "mdast";
 import type { Visibility } from "./db/schema";
+import { rehypePrettyCodeOptions } from "./rehype-pretty-code-options";
 import { extractTocFromTree, type TocItem } from "./toc";
 
 export type { TocItem } from "./toc";
@@ -100,14 +101,7 @@ export async function renderMarkdown(bodyMd: string): Promise<{
     })
     .use(remarkRehype, { allowDangerousHtml: false })
     .use(rehypeSlug)
-    .use(rehypePrettyCode, {
-      theme: {
-        light: "github-light",
-        dark: "github-dark",
-      },
-      keepBackground: false,
-      defaultLang: "txt",
-    })
+    .use(rehypePrettyCode, rehypePrettyCodeOptions)
     .use(rehypeStringify);
 
   const file = await processor.process(bodyMd);
