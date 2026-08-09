@@ -1,36 +1,93 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# thblog
 
-## Getting Started
+Mobile-first personal blog. Public readers get a fast reading experience; you sign in to upload Markdown, convert it to posts, and toggle **public / private**.
 
-First, run the development server:
+## Stack
+
+- Next.js 15 (App Router) + TypeScript + Tailwind CSS
+- Drizzle ORM + SQLite / LibSQL (Turso-ready)
+- Better Auth (httpOnly session cookie, 60-day lifetime)
+- remark / rehype + Shiki for Markdown → HTML
+- Serwist PWA (installable on mobile)
+
+## Quick start
 
 ```bash
+cp .env.example .env
+# edit ADMIN_EMAIL / ADMIN_PASSWORD / BETTER_AUTH_SECRET
+
+npm install
+npm run db:setup
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). Admin: [http://localhost:3000/admin](http://localhost:3000/admin).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Default seed credentials (change these):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Email: `admin@thblog.local`
+- Password: `changeme-thblog`
 
-## Learn More
+## Markdown format
 
-To learn more about Next.js, take a look at the following resources:
+```md
+---
+title: Two Sum
+slug: two-sum
+tags: [arrays, hash-map]
+excerpt: Pattern — hashmap for complements
+visibility: private
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Pattern
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Your notes and code here.
+```
 
-## Deploy on Vercel
+Upload the file in **Admin**. Visibility in frontmatter is applied on create; you can flip **public / private** anytime in the admin list.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Visibility rules
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Visibility | Home / tags / RSS / sitemap | Direct URL |
+|------------|-----------------------------|------------|
+| `public`   | Listed                      | Anyone     |
+| `private`  | Hidden                      | Admin only (others get 404) |
+
+## PWA on mobile
+
+1. Deploy (or use HTTPS locally).
+2. Open the site in Chrome/Safari.
+3. **Add to Home Screen** / Install app.
+4. Sign in once on `/admin/login` — the session cookie lasts **60 days** and refreshes while you use the app, so you should not need to log in every open.
+
+Service worker caches public pages/assets. `/admin` and `/api` are network-only so private data is not cached as public.
+
+## Production (Vercel)
+
+1. Create a Turso database (or any LibSQL URL) and set:
+   - `DATABASE_URL`
+   - `DATABASE_AUTH_TOKEN` (if required)
+2. Set `BETTER_AUTH_SECRET` (long random string) and `BETTER_AUTH_URL` to your production origin.
+3. Set `ADMIN_EMAIL` / `ADMIN_PASSWORD`, then run `npm run db:setup` against that database (locally with prod env, or via a one-off job).
+4. Deploy to Vercel.
+
+```bash
+npx vercel
+```
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `npm run dev` | Dev server |
+| `npm run build` / `start` | Production |
+| `npm run db:push` | Apply schema |
+| `npm run db:seed` | Admin user + sample posts |
+| `npm run db:setup` | push + seed |
+
+## Project layout
+
+- `src/app` — public pages, admin, API, RSS, sitemap, PWA SW
+- `src/lib` — auth, db, markdown pipeline, posts
+- `src/components` — UI shell, admin dashboard, reading UX
+- `scripts/seed.ts` — admin + sample posts
