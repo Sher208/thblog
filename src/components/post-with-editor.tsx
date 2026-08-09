@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, Columns2, Copy } from "lucide-react";
+import { ArrowLeft, Check, Columns2, Copy, History } from "lucide-react";
 import { ReadingProgress } from "@/components/reading-progress";
 import { TableOfContents } from "@/components/table-of-contents";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +46,18 @@ type Draft = {
 
 type PreviewTab = "write" | "preview";
 
+type PostVersionItem = {
+  id: string;
+  kind: "manual" | "draft";
+  title: string;
+  slug: string;
+  excerpt: string;
+  bodyMd: string;
+  visibility: Visibility;
+  tags: string[];
+  createdAt: string;
+};
+
 const AUTOSAVE_MS = 60 * 1000;
 const PREVIEW_DEBOUNCE_MS = 120;
 
@@ -78,6 +90,17 @@ function draftsEqual(a: Draft, b: Draft): boolean {
   );
 }
 
+function formatVersionTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
 const fieldClass =
   "w-full rounded-lg border border-border bg-background-elevated px-3 py-2 text-sm outline-none ring-accent focus:ring-2";
 
@@ -99,6 +122,13 @@ export function PostWithEditor({
   const [dirty, setDirty] = useState(false);
   const [copied, setCopied] = useState(false);
   const [mobileTab, setMobileTab] = useState<PreviewTab>("write");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [versions, setVersions] = useState<PostVersionItem[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
+    null,
+  );
+  const [restoring, setRestoring] = useState(false);
 
   const draftRef = useRef(draft);
   const lastSavedRef = useRef(draftFromPost(post));
@@ -154,9 +184,46 @@ export function PostWithEditor({
     return () => window.clearTimeout(handle);
   }, [draft.bodyMd, editing]);
 
+  const loadVersions = useCallback(async () => {
+    setVersionsLoading(true);
+    try {
+      const res = await fetch(
+        `/api/posts/versions?postId=${encodeURIComponent(postIdRef.current)}`,
+      );
+      if (!res.ok) {
+        toast.add({ title: "Could not load versions", type: "error" });
+        return;
+      }
+      const data = (await res.json()) as { versions: PostVersionItem[] };
+      const next = data.versions.map((version) => ({
+        ...version,
+        createdAt:
+          typeof version.createdAt === "string"
+            ? version.createdAt
+            : new Date(version.createdAt).toISOString(),
+      }));
+      setVersions(next);
+      setSelectedVersionId((current) => {
+        if (current && next.some((version) => version.id === current)) {
+          return current;
+        }
+        return next[0]?.id ?? null;
+      });
+    } finally {
+      setVersionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (editing && historyOpen) {
+      void loadVersions();
+    }
+  }, [editing, historyOpen, loadVersions]);
+
   const saveEdit = useCallback(
-    async (options?: { autosave?: boolean }) => {
+    async (options?: { autosave?: boolean; stayInEditor?: boolean }) => {
       const autosave = options?.autosave ?? false;
+      const stayInEditor = options?.stayInEditor ?? false;
       const current = draftRef.current;
 
       if (!current.title.trim() || !current.slug.trim()) {
@@ -190,6 +257,7 @@ export function PostWithEditor({
           visibility: current.visibility,
           tags: parseTagsInput(current.tags),
           bodyMd: current.bodyMd,
+          version: autosave ? "draft" : "manual",
         }),
       });
 
@@ -214,8 +282,11 @@ export function PostWithEditor({
       };
       setDirty(false);
 
+      if (historyOpen) {
+        void loadVersions();
+      }
+
       if (autosave) {
-        toast.add({ title: "Autosaved", type: "success" });
         if (nextSlug !== post.slug) {
           setEditQuery(true, nextSlug);
         }
@@ -223,8 +294,18 @@ export function PostWithEditor({
         return true;
       }
 
-      toast.add({ title: "Saved", type: "success" });
+      toast.add({ title: "Saved as version", type: "success" });
+
+      if (stayInEditor) {
+        if (nextSlug !== post.slug) {
+          setEditQuery(true, nextSlug);
+        }
+        router.refresh();
+        return true;
+      }
+
       setEditing(false);
+      setHistoryOpen(false);
 
       if (nextSlug !== post.slug) {
         router.replace(`/blog/${nextSlug}`);
@@ -236,9 +317,8 @@ export function PostWithEditor({
       router.refresh();
       return true;
     },
-    // setEditQuery uses searchParams/post.slug/router; keep deps minimal via refs where needed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [post.slug, router, searchParams],
+    [historyOpen, loadVersions, post.slug, router, searchParams],
   );
 
   useEffect(() => {
@@ -266,12 +346,85 @@ export function PostWithEditor({
 
   function cancelEdit() {
     setEditing(false);
+    setHistoryOpen(false);
     const next = draftFromPost(post);
     setDraft(next);
     lastSavedRef.current = next;
     setPreviewHtml(post.bodyHtml);
     setDirty(false);
     setEditQuery(false);
+  }
+
+  async function restoreVersion(versionId: string) {
+    if (!confirm("Restore this version? Current content will be saved first.")) {
+      return;
+    }
+
+    setRestoring(true);
+
+    if (dirty) {
+      const saved = await saveEdit({ stayInEditor: true });
+      if (!saved) {
+        setRestoring(false);
+        return;
+      }
+    }
+
+    const res = await fetch("/api/posts/versions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        postId: postIdRef.current,
+        versionId,
+      }),
+    });
+    setRestoring(false);
+
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      toast.add({
+        title: data?.error || "Could not restore version",
+        type: "error",
+      });
+      return;
+    }
+
+    const data = (await res.json()) as {
+      post: EditablePost & {
+        tags: { id: string; name: string; slug: string }[];
+      };
+      versions: PostVersionItem[];
+    };
+
+    const nextDraft: Draft = {
+      title: data.post.title,
+      slug: data.post.slug,
+      excerpt: data.post.excerpt,
+      tags: data.post.tags.map((tag) => tag.name).join(", "),
+      visibility: data.post.visibility,
+      bodyMd: data.post.bodyMd,
+    };
+    setDraft(nextDraft);
+    lastSavedRef.current = nextDraft;
+    setDirty(false);
+    setPreviewHtml(data.post.bodyHtml);
+    setVersions(
+      data.versions.map((version) => ({
+        ...version,
+        createdAt:
+          typeof version.createdAt === "string"
+            ? version.createdAt
+            : new Date(version.createdAt).toISOString(),
+      })),
+    );
+    toast.add({ title: "Version restored", type: "success" });
+
+    if (data.post.slug !== post.slug) {
+      router.replace(`/blog/${data.post.slug}?edit=1`);
+    }
+    router.refresh();
   }
 
   async function copyMarkdown() {
@@ -295,6 +448,9 @@ export function PostWithEditor({
   }
 
   if (editing && canEdit) {
+    const selectedVersion =
+      versions.find((version) => version.id === selectedVersionId) ?? null;
+
     return (
       <div className="fixed inset-x-0 bottom-0 top-12 z-50 flex flex-col border-t border-border bg-background">
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-3 sm:px-5">
@@ -329,6 +485,23 @@ export function PostWithEditor({
             <TooltipContent side="bottom">
               {copied ? "Copied" : "Copy MD"}
             </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Version history"
+                  aria-pressed={historyOpen}
+                  onClick={() => setHistoryOpen((open) => !open)}
+                />
+              }
+            >
+              <History className="size-4" aria-hidden />
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Versions</TooltipContent>
           </Tooltip>
           <button
             type="button"
@@ -436,11 +609,21 @@ export function PostWithEditor({
           </button>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
+        <div
+          className={cn(
+            "grid min-h-0 flex-1 grid-cols-1",
+            historyOpen
+              ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(16rem,18rem)]"
+              : "md:grid-cols-2",
+          )}
+        >
           <div
             className={cn(
               "min-h-0 border-border md:border-r",
-              mobileTab === "preview" ? "hidden md:block" : "flex md:block",
+              mobileTab === "preview" && !historyOpen
+                ? "hidden md:block"
+                : "flex md:block",
+              historyOpen && mobileTab === "preview" ? "hidden lg:flex" : null,
             )}
           >
             <textarea
@@ -456,20 +639,113 @@ export function PostWithEditor({
           <div
             className={cn(
               "min-h-0 overflow-y-auto px-4 py-4 sm:px-5",
-              mobileTab === "write" ? "hidden md:block" : "block",
+              mobileTab === "write" && !historyOpen
+                ? "hidden md:block"
+                : "block",
+              historyOpen && mobileTab === "write" ? "hidden lg:block" : null,
             )}
           >
-            <h2 className="mb-4 font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">
-              {draft.title.trim() || "Untitled"}
-            </h2>
-            {draft.excerpt.trim() ? (
-              <p className="mb-6 text-muted-foreground">{draft.excerpt}</p>
-            ) : null}
-            <div
-              className="prose-blog"
-              dangerouslySetInnerHTML={{ __html: previewHtml }}
-            />
+            {historyOpen && selectedVersion ? (
+              <>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                      {selectedVersion.kind === "draft"
+                        ? "Draft preview"
+                        : "Version preview"}
+                    </p>
+                    <h2 className="mt-1 font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">
+                      {selectedVersion.title}
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={restoring}
+                    onClick={() => void restoreVersion(selectedVersion.id)}
+                    className="rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background disabled:opacity-60"
+                  >
+                    {restoring ? "Restoring…" : "Rollback"}
+                  </button>
+                </div>
+                {selectedVersion.excerpt ? (
+                  <p className="mb-6 text-muted-foreground">
+                    {selectedVersion.excerpt}
+                  </p>
+                ) : null}
+                <pre className="whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-muted-foreground">
+                  {selectedVersion.bodyMd}
+                </pre>
+              </>
+            ) : (
+              <>
+                <h2 className="mb-4 font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">
+                  {draft.title.trim() || "Untitled"}
+                </h2>
+                {draft.excerpt.trim() ? (
+                  <p className="mb-6 text-muted-foreground">{draft.excerpt}</p>
+                ) : null}
+                <div
+                  className="prose-blog"
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                />
+              </>
+            )}
           </div>
+          {historyOpen ? (
+            <aside className="min-h-0 overflow-y-auto border-t border-border lg:border-l lg:border-t-0">
+              <div className="px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  History
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Manual saves are kept. Autosave keeps one draft.
+                </p>
+              </div>
+              {versionsLoading ? (
+                <p className="px-4 text-sm text-muted-foreground">Loading…</p>
+              ) : versions.length === 0 ? (
+                <p className="px-4 text-sm text-muted-foreground">
+                  No versions yet. Save to create one.
+                </p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {versions.map((version) => (
+                    <li key={version.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedVersionId(version.id)}
+                        className={cn(
+                          "w-full px-4 py-3 text-left transition hover:bg-accent-soft/50",
+                          selectedVersionId === version.id
+                            ? "bg-accent-soft"
+                            : null,
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">
+                            {formatVersionTime(version.createdAt)}
+                          </span>
+                          <span
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide",
+                              version.kind === "draft"
+                                ? "bg-code-bg text-muted-foreground"
+                                : "bg-accent-soft text-primary",
+                            )}
+                          >
+                            {version.kind === "draft" ? "draft" : "saved"}
+                          </span>
+                        </div>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          {version.title}
+                        </p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </aside>
+          ) : null}
         </div>
       </div>
     );

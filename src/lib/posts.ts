@@ -1,6 +1,13 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "./db";
-import { postTags, posts, tags, type Visibility } from "./db/schema";
+import {
+  postTags,
+  postVersions,
+  posts,
+  tags,
+  type Visibility,
+  type VersionKind,
+} from "./db/schema";
 import { createId } from "./id";
 import {
   parseMarkdownFile,
@@ -214,6 +221,182 @@ export async function listPublicTags() {
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export type PostVersionRecord = {
+  id: string;
+  postId: string;
+  kind: VersionKind;
+  title: string;
+  slug: string;
+  excerpt: string;
+  bodyMd: string;
+  visibility: Visibility;
+  tags: string[];
+  createdAt: Date;
+};
+
+function parseTagsJson(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((tag): tag is string => typeof tag === "string");
+  } catch {
+    return [];
+  }
+}
+
+function mapVersion(
+  row: typeof postVersions.$inferSelect,
+): PostVersionRecord {
+  return {
+    id: row.id,
+    postId: row.postId,
+    kind: row.kind,
+    title: row.title,
+    slug: row.slug,
+    excerpt: row.excerpt,
+    bodyMd: row.bodyMd,
+    visibility: row.visibility,
+    tags: parseTagsJson(row.tagsJson),
+    createdAt: row.createdAt,
+  };
+}
+
+async function insertManualVersion(snapshot: {
+  postId: string;
+  title: string;
+  slug: string;
+  excerpt: string;
+  bodyMd: string;
+  visibility: Visibility;
+  tags: string[];
+}) {
+  await db.insert(postVersions).values({
+    id: createId("ver"),
+    postId: snapshot.postId,
+    kind: "manual",
+    title: snapshot.title,
+    slug: snapshot.slug,
+    excerpt: snapshot.excerpt,
+    bodyMd: snapshot.bodyMd,
+    visibility: snapshot.visibility,
+    tagsJson: JSON.stringify(snapshot.tags),
+    createdAt: new Date(),
+  });
+}
+
+async function upsertDraftVersion(snapshot: {
+  postId: string;
+  title: string;
+  slug: string;
+  excerpt: string;
+  bodyMd: string;
+  visibility: Visibility;
+  tags: string[];
+}) {
+  const existing = await db.query.postVersions.findFirst({
+    where: and(
+      eq(postVersions.postId, snapshot.postId),
+      eq(postVersions.kind, "draft"),
+    ),
+  });
+
+  const now = new Date();
+  if (existing) {
+    await db
+      .update(postVersions)
+      .set({
+        title: snapshot.title,
+        slug: snapshot.slug,
+        excerpt: snapshot.excerpt,
+        bodyMd: snapshot.bodyMd,
+        visibility: snapshot.visibility,
+        tagsJson: JSON.stringify(snapshot.tags),
+        createdAt: now,
+      })
+      .where(eq(postVersions.id, existing.id));
+    return;
+  }
+
+  await db.insert(postVersions).values({
+    id: createId("ver"),
+    postId: snapshot.postId,
+    kind: "draft",
+    title: snapshot.title,
+    slug: snapshot.slug,
+    excerpt: snapshot.excerpt,
+    bodyMd: snapshot.bodyMd,
+    visibility: snapshot.visibility,
+    tagsJson: JSON.stringify(snapshot.tags),
+    createdAt: now,
+  });
+}
+
+async function clearDraftVersions(postId: string) {
+  await db
+    .delete(postVersions)
+    .where(
+      and(eq(postVersions.postId, postId), eq(postVersions.kind, "draft")),
+    );
+}
+
+export async function listPostVersions(
+  postId: string,
+): Promise<PostVersionRecord[]> {
+  const rows = await db.query.postVersions.findMany({
+    where: eq(postVersions.postId, postId),
+    orderBy: [desc(postVersions.createdAt)],
+  });
+  return rows.map(mapVersion);
+}
+
+export async function getPostVersion(
+  versionId: string,
+): Promise<PostVersionRecord | null> {
+  const row = await db.query.postVersions.findFirst({
+    where: eq(postVersions.id, versionId),
+  });
+  return row ? mapVersion(row) : null;
+}
+
+export async function restorePostVersion(
+  postId: string,
+  versionId: string,
+): Promise<PostWithTags | null> {
+  const existing = await getPostById(postId);
+  const version = await getPostVersion(versionId);
+  if (!existing || !version || version.postId !== postId) return null;
+
+  // Keep current live content as a manual version before rollback.
+  await insertManualVersion({
+    postId,
+    title: existing.title,
+    slug: existing.slug,
+    excerpt: existing.excerpt,
+    bodyMd: existing.bodyMd,
+    visibility: existing.visibility,
+    tags: existing.tags.map((tag) => tag.name),
+  });
+
+  const restored = await updatePostMeta(
+    postId,
+    {
+      title: version.title,
+      slug: version.slug,
+      excerpt: version.excerpt,
+      visibility: version.visibility,
+      tags: version.tags,
+      bodyMd: version.bodyMd,
+    },
+    { version: null },
+  );
+
+  if (restored) {
+    await clearDraftVersions(postId);
+  }
+
+  return restored;
+}
+
 export async function upsertFromParsed(
   parsed: ParsedMarkdown,
   options?: { id?: string; visibilityOverride?: Visibility },
@@ -252,6 +435,17 @@ export async function upsertFromParsed(
     await setPostTags(existing.id, parsed.tags);
     const updated = await getPostById(existing.id);
     if (!updated) throw new Error("Failed to load updated post");
+
+    await insertManualVersion({
+      postId: updated.id,
+      title: updated.title,
+      slug: updated.slug,
+      excerpt: updated.excerpt,
+      bodyMd: updated.bodyMd,
+      visibility: updated.visibility,
+      tags: updated.tags.map((tag) => tag.name),
+    });
+    await clearDraftVersions(updated.id);
     return updated;
   }
 
@@ -273,6 +467,16 @@ export async function upsertFromParsed(
   await setPostTags(id, parsed.tags);
   const created = await getPostById(id);
   if (!created) throw new Error("Failed to load created post");
+
+  await insertManualVersion({
+    postId: created.id,
+    title: created.title,
+    slug: created.slug,
+    excerpt: created.excerpt,
+    bodyMd: created.bodyMd,
+    visibility: created.visibility,
+    tags: created.tags.map((tag) => tag.name),
+  });
   return created;
 }
 
@@ -317,6 +521,7 @@ export async function updatePostMeta(
     tags?: string[];
     bodyMd?: string;
   },
+  options?: { version?: VersionKind | null },
 ): Promise<PostWithTags | null> {
   const existing = await getPostById(id);
   if (!existing) return null;
@@ -328,14 +533,18 @@ export async function updatePostMeta(
       : { html: existing.bodyHtml, toc: existing.toc };
 
   const visibility = data.visibility ?? existing.visibility;
+  const title = data.title ?? existing.title;
+  const slug = data.slug ?? existing.slug;
+  const excerpt = data.excerpt ?? existing.excerpt;
+  const tagNames = data.tags ?? existing.tags.map((tag) => tag.name);
   const now = new Date();
 
   await db
     .update(posts)
     .set({
-      title: data.title ?? existing.title,
-      slug: data.slug ?? existing.slug,
-      excerpt: data.excerpt ?? existing.excerpt,
+      title,
+      slug,
+      excerpt,
       bodyMd,
       bodyHtml: html,
       tocJson: JSON.stringify(toc),
@@ -350,6 +559,30 @@ export async function updatePostMeta(
 
   if (data.tags) {
     await setPostTags(id, data.tags);
+  }
+
+  const versionMode = options?.version ?? null;
+  if (versionMode === "manual") {
+    await insertManualVersion({
+      postId: id,
+      title,
+      slug,
+      excerpt,
+      bodyMd,
+      visibility,
+      tags: tagNames,
+    });
+    await clearDraftVersions(id);
+  } else if (versionMode === "draft") {
+    await upsertDraftVersion({
+      postId: id,
+      title,
+      slug,
+      excerpt,
+      bodyMd,
+      visibility,
+      tags: tagNames,
+    });
   }
 
   return getPostById(id);

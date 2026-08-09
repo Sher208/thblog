@@ -140,6 +140,7 @@ export const postTags = sqliteTable(
 
 export const postsRelations = relations(posts, ({ many }) => ({
   postTags: many(postTags),
+  versions: many(postVersions),
 }));
 
 export const tagsRelations = relations(tags, ({ many }) => ({
@@ -157,6 +158,44 @@ export const postTagsRelations = relations(postTags, ({ one }) => ({
   }),
 }));
 
+export const postVersions = sqliteTable(
+  "post_versions",
+  {
+    id: text("id").primaryKey(),
+    postId: text("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["manual", "draft"] }).notNull(),
+    title: text("title").notNull(),
+    slug: text("slug").notNull(),
+    excerpt: text("excerpt").notNull().default(""),
+    bodyMd: text("body_md").notNull(),
+    visibility: text("visibility", { enum: ["public", "private"] })
+      .notNull()
+      .default("private"),
+    tagsJson: text("tags_json").notNull().default("[]"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
+  },
+  (table) => [
+    index("post_versions_post_id_created_idx").on(
+      table.postId,
+      table.createdAt,
+    ),
+    index("post_versions_post_id_kind_idx").on(table.postId, table.kind),
+  ],
+);
+
+export const postVersionsRelations = relations(postVersions, ({ one }) => ({
+  post: one(posts, {
+    fields: [postVersions.postId],
+    references: [posts.id],
+  }),
+}));
+
 export type Post = typeof posts.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
+export type PostVersion = typeof postVersions.$inferSelect;
 export type Visibility = "public" | "private";
+export type VersionKind = "manual" | "draft";

@@ -94,6 +94,7 @@ export async function PATCH(request: Request) {
     excerpt?: string;
     tags?: string[];
     bodyMd?: string;
+    version?: "manual" | "draft" | null;
   };
 
   if (!body.id) {
@@ -116,14 +117,18 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ post });
     }
 
-    const post = await updatePostMeta(body.id, {
-      title: body.title,
-      slug: body.slug,
-      excerpt: body.excerpt,
-      visibility: body.visibility,
-      tags: body.tags,
-      bodyMd: body.bodyMd,
-    });
+    const post = await updatePostMeta(
+      body.id,
+      {
+        title: body.title,
+        slug: body.slug,
+        excerpt: body.excerpt,
+        visibility: body.visibility,
+        tags: body.tags,
+        bodyMd: body.bodyMd,
+      },
+      { version: body.version ?? "manual" },
+    );
     if (!post) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
