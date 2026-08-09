@@ -1,37 +1,28 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { TocItem } from "@/lib/toc";
 import { cn } from "@/lib/utils";
 
 export function EditorOutline({
   items,
-  activeId: controlledActiveId,
   onSelect,
   className,
   /** When set, tracks the active heading while scrolling (window or a container). */
   scrollRoot = null,
 }: {
   items: TocItem[];
-  activeId?: string | null;
   onSelect: (item: TocItem) => void;
   className?: string;
   scrollRoot?: "window" | HTMLElement | null;
 }) {
-  const [localActiveId, setLocalActiveId] = useState<string | null>(
-    () => controlledActiveId ?? items[0]?.id ?? null,
+  const [activeId, setActiveId] = useState<string | null>(
+    () => items[0]?.id ?? null,
   );
+  const activeIdRef = useRef<string | null>(activeId);
   const activeRef = useRef<HTMLButtonElement>(null);
-  const pendingActiveId = useRef<string | null>(null);
   const rafId = useRef(0);
-
-  const activeId = controlledActiveId ?? localActiveId;
-
-  useEffect(() => {
-    if (controlledActiveId != null) {
-      setLocalActiveId(controlledActiveId);
-    }
-  }, [controlledActiveId]);
+  const ignoreScrollUntil = useRef(0);
 
   useEffect(() => {
     if (!scrollRoot || items.length === 0) return;
@@ -67,25 +58,40 @@ export function EditorOutline({
       return current;
     }
 
+    function applyActiveId(next: string | null) {
+      if (next === activeIdRef.current) return;
+      activeIdRef.current = next;
+      setActiveId(next);
+    }
+
     function scheduleUpdate() {
+      if (performance.now() < ignoreScrollUntil.current) return;
       if (rafId.current) return;
       rafId.current = requestAnimationFrame(() => {
         rafId.current = 0;
-        const next = readActiveId();
-        if (next === pendingActiveId.current) return;
-        pendingActiveId.current = next;
-        setLocalActiveId(next);
+        applyActiveId(readActiveId());
       });
     }
 
-    scheduleUpdate();
+    applyActiveId(readActiveId());
+
+    function resumeFromUserScroll() {
+      ignoreScrollUntil.current = 0;
+      scheduleUpdate();
+    }
 
     const target: HTMLElement | Window = rootEl ?? window;
     target.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("resize", scheduleUpdate);
+    target.addEventListener("wheel", resumeFromUserScroll, { passive: true });
+    target.addEventListener("touchmove", resumeFromUserScroll, {
+      passive: true,
+    });
     return () => {
       target.removeEventListener("scroll", scheduleUpdate);
       window.removeEventListener("resize", scheduleUpdate);
+      target.removeEventListener("wheel", resumeFromUserScroll);
+      target.removeEventListener("touchmove", resumeFromUserScroll);
       if (rafId.current) cancelAnimationFrame(rafId.current);
     };
   }, [items, scrollRoot]);
@@ -108,6 +114,45 @@ export function EditorOutline({
       container.scrollTop = elBottom - container.clientHeight + extra;
     }
   }, [activeId]);
+
+  function handleSelect(item: TocItem, event: MouseEvent<HTMLButtonElement>) {
+    event.currentTarget.focus({ preventScroll: true });
+    activeIdRef.current = item.id;
+    setActiveId(item.id);
+    // Ignore scroll-spy briefly while smooth/programmatic jump runs,
+    // then resume tracking from the real scroll position.
+    ignoreScrollUntil.current = performance.now() + 450;
+    onSelect(item);
+    window.setTimeout(() => {
+      ignoreScrollUntil.current = 0;
+      if (!scrollRoot) return;
+      const rootEl = scrollRoot === "window" ? null : scrollRoot;
+      const headings = items
+        .map((entry) => document.getElementById(entry.id))
+        .filter((el): el is HTMLElement => Boolean(el));
+      if (!headings.length) return;
+
+      let next = headings[0]?.id ?? null;
+      if (rootEl) {
+        const marker =
+          rootEl.scrollTop + Math.min(80, rootEl.clientHeight * 0.2);
+        for (const heading of headings) {
+          if (heading.offsetTop <= marker) next = heading.id;
+          else break;
+        }
+      } else {
+        const marker = 140;
+        for (const heading of headings) {
+          if (heading.getBoundingClientRect().top <= marker) next = heading.id;
+          else break;
+        }
+      }
+      if (next !== activeIdRef.current) {
+        activeIdRef.current = next;
+        setActiveId(next);
+      }
+    }, 480);
+  }
 
   return (
     <nav
@@ -132,11 +177,7 @@ export function EditorOutline({
                 <button
                   type="button"
                   ref={active ? activeRef : undefined}
-                  onClick={() => {
-                    pendingActiveId.current = item.id;
-                    setLocalActiveId(item.id);
-                    onSelect(item);
-                  }}
+                  onClick={(event) => handleSelect(item, event)}
                   className={cn(
                     "w-full rounded-md border-l-2 px-2.5 py-1.5 text-left text-sm",
                     item.level <= 1 && "font-semibold",
