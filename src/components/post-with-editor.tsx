@@ -177,7 +177,7 @@ export function PostWithEditor({
   const [draft, setDraft] = useState<Draft>(() => draftFromPost(post));
   const [previewHtml, setPreviewHtml] = useState(post.bodyHtml);
   const [outline, setOutline] = useState<TocItem[]>(() =>
-    post.toc.length > 0 ? post.toc : extractTocFromMarkdown(post.bodyMd),
+    extractTocFromMarkdown(post.bodyMd),
   );
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -297,8 +297,7 @@ export function PostWithEditor({
       setDraft(next);
       lastSavedRef.current = next;
       setPreviewHtml(post.bodyHtml);
-      const nextOutline =
-        post.toc.length > 0 ? post.toc : extractTocFromMarkdown(post.bodyMd);
+      const nextOutline = extractTocFromMarkdown(post.bodyMd);
       setOutline(nextOutline);
       setDirty(false);
     }
@@ -512,8 +511,7 @@ export function PostWithEditor({
     setDraft(next);
     lastSavedRef.current = next;
     setPreviewHtml(post.bodyHtml);
-    const nextOutline =
-      post.toc.length > 0 ? post.toc : extractTocFromMarkdown(post.bodyMd);
+    const nextOutline = extractTocFromMarkdown(post.bodyMd);
     setOutline(nextOutline);
     setDirty(false);
     setEditQuery(false);

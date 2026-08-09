@@ -1,4 +1,3 @@
-import GithubSlugger from "github-slugger";
 import matter from "gray-matter";
 import rehypePrettyCode from "rehype-pretty-code";
 import rehypeSlug from "rehype-slug";
@@ -7,10 +6,9 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
-import { visit } from "unist-util-visit";
 import type { Root as MdastRoot } from "mdast";
 import type { Visibility } from "./db/schema";
-import type { TocItem } from "./toc";
+import { extractTocFromTree, type TocItem } from "./toc";
 
 export type { TocItem } from "./toc";
 
@@ -88,32 +86,6 @@ export function parseMarkdownFile(
   };
 }
 
-function extractToc(tree: MdastRoot): TocItem[] {
-  const slugger = new GithubSlugger();
-  const items: TocItem[] = [];
-
-  visit(tree, "heading", (node) => {
-    if (node.depth < 1 || node.depth > 3) return;
-    const text = node.children
-      .map((child) => {
-        if ("value" in child && typeof child.value === "string") {
-          return child.value;
-        }
-        return "";
-      })
-      .join("")
-      .trim();
-    if (!text) return;
-    items.push({
-      id: slugger.slug(text),
-      text,
-      level: node.depth,
-    });
-  });
-
-  return items;
-}
-
 export async function renderMarkdown(bodyMd: string): Promise<{
   html: string;
   toc: TocItem[];
@@ -124,7 +96,7 @@ export async function renderMarkdown(bodyMd: string): Promise<{
     .use(remarkParse)
     .use(remarkGfm)
     .use(() => (tree: MdastRoot) => {
-      toc = extractToc(tree);
+      toc = extractTocFromTree(tree);
     })
     .use(remarkRehype, { allowDangerousHtml: false })
     .use(rehypeSlug)
