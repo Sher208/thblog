@@ -1,29 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 
 export function ReadingProgress() {
-  const [progress, setProgress] = useState(0);
+  const barRef = useRef<HTMLDivElement>(null);
+  const rafId = useRef(0);
 
   useEffect(() => {
-    const onScroll = () => {
+    const update = () => {
+      rafId.current = 0;
       const article = document.getElementById("post-article");
-      if (!article) return;
-      const rect = article.getBoundingClientRect();
+      const bar = barRef.current;
+      if (!article || !bar) return;
+
       const total = article.offsetHeight - window.innerHeight;
       const scrolled = Math.min(
-        Math.max(-rect.top, 0),
+        Math.max(-article.getBoundingClientRect().top, 0),
         Math.max(total, 1),
       );
-      setProgress(total > 0 ? (scrolled / total) * 100 : 0);
+      const progress = total > 0 ? (scrolled / total) * 100 : 0;
+      bar.style.width = `${progress}%`;
     };
 
-    onScroll();
+    const onScroll = () => {
+      if (rafId.current) return;
+      rafId.current = requestAnimationFrame(update);
+    };
+
+    update();
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
     return () => {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
+      if (rafId.current) cancelAnimationFrame(rafId.current);
     };
   }, []);
 
@@ -32,10 +42,7 @@ export function ReadingProgress() {
       className="fixed inset-x-0 top-0 z-50 h-0.5 bg-transparent"
       aria-hidden
     >
-      <div
-        className="h-full bg-primary transition-[width] duration-150 ease-out"
-        style={{ width: `${progress}%` }}
-      />
+      <div ref={barRef} className="h-full w-0 bg-primary" />
     </div>
   );
 }

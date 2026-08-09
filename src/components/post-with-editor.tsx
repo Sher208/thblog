@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { ArrowLeft, Check, Columns2, Copy, History } from "lucide-react";
+import { EditorOutline } from "@/components/editor-outline";
 import { ReadingProgress } from "@/components/reading-progress";
-import { TableOfContents } from "@/components/table-of-contents";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/toast";
 import type { Visibility } from "@/lib/db/schema";
-import type { TocItem } from "@/lib/markdown";
+import { extractTocFromMarkdown, type TocItem } from "@/lib/toc";
 import { renderMarkdownPreview } from "@/lib/markdown-preview";
 import { serializePostToMarkdown } from "@/lib/serialize-post-markdown";
 import { cn } from "@/lib/utils";
@@ -44,7 +44,7 @@ type Draft = {
   bodyMd: string;
 };
 
-type PreviewTab = "write" | "preview";
+type PreviewTab = "write" | "preview" | "index";
 
 type PostVersionItem = {
   id: string;
@@ -176,6 +176,9 @@ export function PostWithEditor({
   );
   const [draft, setDraft] = useState<Draft>(() => draftFromPost(post));
   const [previewHtml, setPreviewHtml] = useState(post.bodyHtml);
+  const [outline, setOutline] = useState<TocItem[]>(() =>
+    post.toc.length > 0 ? post.toc : extractTocFromMarkdown(post.bodyMd),
+  );
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -187,6 +190,7 @@ export function PostWithEditor({
     null,
   );
   const [restoring, setRestoring] = useState(false);
+  const [previewEl, setPreviewEl] = useState<HTMLDivElement | null>(null);
 
   const draftRef = useRef(draft);
   const lastSavedRef = useRef(draftFromPost(post));
@@ -194,24 +198,67 @@ export function PostWithEditor({
   const previewRequestId = useRef(0);
   const postIdRef = useRef(post.id);
   const editorRef = useRef<HTMLTextAreaElement>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
   const scrollSyncLock = useRef(false);
+  const scrollRafId = useRef(0);
 
   draftRef.current = draft;
   postIdRef.current = post.id;
 
+  function bindPreviewEl(el: HTMLDivElement | null) {
+    previewRef.current = el;
+    setPreviewEl(el);
+  }
+
   function handleEditorScroll() {
-    const editor = editorRef.current;
-    const preview = previewRef.current;
-    if (!editor || !preview || historyOpen) return;
-    syncScrollByRatio(editor, preview, scrollSyncLock);
+    if (scrollRafId.current || historyOpen) return;
+    scrollRafId.current = requestAnimationFrame(() => {
+      scrollRafId.current = 0;
+      const editor = editorRef.current;
+      const preview = previewRef.current;
+      if (!editor || !preview) return;
+      syncScrollByRatio(editor, preview, scrollSyncLock);
+    });
   }
 
   function handlePreviewScroll() {
-    const editor = editorRef.current;
+    if (scrollRafId.current || historyOpen) return;
+    scrollRafId.current = requestAnimationFrame(() => {
+      scrollRafId.current = 0;
+      const editor = editorRef.current;
+      const preview = previewRef.current;
+      if (!editor || !preview) return;
+      syncScrollByRatio(preview, editor, scrollSyncLock);
+    });
+  }
+
+  function jumpToOutlineItem(item: TocItem) {
     const preview = previewRef.current;
-    if (!editor || !preview || historyOpen) return;
-    syncScrollByRatio(preview, editor, scrollSyncLock);
+    const editor = editorRef.current;
+
+    if (preview) {
+      const heading = preview.querySelector<HTMLElement>(
+        `#${CSS.escape(item.id)}`,
+      );
+      if (heading) {
+        scrollSyncLock.current = true;
+        preview.scrollTop = Math.max(0, heading.offsetTop - 16);
+        requestAnimationFrame(() => {
+          scrollSyncLock.current = false;
+        });
+      }
+    }
+
+    if (editor) {
+      const lineIndex = findHeadingLineIndex(draftRef.current.bodyMd, item.text);
+      if (lineIndex >= 0) {
+        scrollTextareaToLine(editor, lineIndex);
+      }
+    }
+
+    if (mobileTab === "index") {
+      setMobileTab("preview");
+    }
   }
 
   function handlePreviewClick(event: MouseEvent<HTMLDivElement>) {
@@ -250,6 +297,9 @@ export function PostWithEditor({
       setDraft(next);
       lastSavedRef.current = next;
       setPreviewHtml(post.bodyHtml);
+      const nextOutline =
+        post.toc.length > 0 ? post.toc : extractTocFromMarkdown(post.bodyMd);
+      setOutline(nextOutline);
       setDirty(false);
     }
   }, [post, editing]);
@@ -273,6 +323,8 @@ export function PostWithEditor({
 
     const handle = window.setTimeout(() => {
       const requestId = ++previewRequestId.current;
+      const nextOutline = extractTocFromMarkdown(draft.bodyMd);
+      setOutline(nextOutline);
       void renderMarkdownPreview(draft.bodyMd).then((html) => {
         if (requestId === previewRequestId.current) {
           setPreviewHtml(html);
@@ -282,6 +334,14 @@ export function PostWithEditor({
 
     return () => window.clearTimeout(handle);
   }, [draft.bodyMd, editing]);
+
+  function jumpToReadHeading(item: TocItem) {
+    const heading = document.getElementById(item.id);
+    if (!heading) return;
+    const top = window.scrollY + heading.getBoundingClientRect().top - 80;
+    window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    window.history.replaceState(null, "", `#${item.id}`);
+  }
 
   const loadVersions = useCallback(async () => {
     setVersionsLoading(true);
@@ -437,6 +497,8 @@ export function PostWithEditor({
     setDraft(next);
     lastSavedRef.current = next;
     setPreviewHtml(post.bodyHtml);
+    const nextOutline = extractTocFromMarkdown(post.bodyMd);
+    setOutline(nextOutline);
     setDirty(false);
     setMobileTab("write");
     setEditing(true);
@@ -450,6 +512,9 @@ export function PostWithEditor({
     setDraft(next);
     lastSavedRef.current = next;
     setPreviewHtml(post.bodyHtml);
+    const nextOutline =
+      post.toc.length > 0 ? post.toc : extractTocFromMarkdown(post.bodyMd);
+    setOutline(nextOutline);
     setDirty(false);
     setEditQuery(false);
   }
@@ -509,6 +574,8 @@ export function PostWithEditor({
     lastSavedRef.current = nextDraft;
     setDirty(false);
     setPreviewHtml(data.post.bodyHtml);
+    const nextOutline = extractTocFromMarkdown(data.post.bodyMd);
+    setOutline(nextOutline);
     setVersions(
       data.versions.map((version) => ({
         ...version,
@@ -706,23 +773,35 @@ export function PostWithEditor({
           >
             Preview
           </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab("index")}
+            className={cn(
+              "rounded-full px-3 py-1.5 text-xs transition",
+              mobileTab === "index"
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Index
+            {outline.length > 0 ? (
+              <span className="ml-1 opacity-70">{outline.length}</span>
+            ) : null}
+          </button>
         </div>
 
         <div
           className={cn(
-            "grid min-h-0 flex-1 grid-cols-1",
+            "grid min-h-0 flex-1 grid-cols-1 overflow-hidden",
             historyOpen
-              ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(16rem,18rem)]"
-              : "md:grid-cols-2",
+              ? "md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_17rem]"
+              : "md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_14rem]",
           )}
         >
           <div
             className={cn(
-              "min-h-0 border-border md:border-r",
-              mobileTab === "preview" && !historyOpen
-                ? "hidden md:block"
-                : "flex md:block",
-              historyOpen && mobileTab === "preview" ? "hidden lg:flex" : null,
+              "min-h-0 min-w-0 border-border md:border-r",
+              mobileTab === "write" ? "flex" : "hidden md:flex",
             )}
           >
             <textarea
@@ -738,15 +817,12 @@ export function PostWithEditor({
             />
           </div>
           <div
-            ref={previewRef}
+            ref={bindPreviewEl}
             onScroll={handlePreviewScroll}
             onClick={handlePreviewClick}
             className={cn(
-              "min-h-0 overflow-y-auto px-4 py-4 sm:px-5",
-              mobileTab === "write" && !historyOpen
-                ? "hidden md:block"
-                : "block",
-              historyOpen && mobileTab === "write" ? "hidden lg:block" : null,
+              "min-h-0 min-w-0 overflow-y-auto px-4 py-4 sm:px-5",
+              mobileTab === "preview" ? "block" : "hidden md:block",
             )}
           >
             {historyOpen && selectedVersion ? (
@@ -799,7 +875,12 @@ export function PostWithEditor({
             )}
           </div>
           {historyOpen ? (
-            <aside className="min-h-0 overflow-y-auto border-t border-border lg:border-l lg:border-t-0">
+            <aside
+              className={cn(
+                "min-h-0 min-w-0 overflow-y-auto border-t border-border md:border-l md:border-t-0",
+                mobileTab === "index" ? "block" : "hidden md:block",
+              )}
+            >
               <div className="px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                   History
@@ -852,115 +933,155 @@ export function PostWithEditor({
                 </ul>
               )}
             </aside>
-          ) : null}
+          ) : (
+            <aside
+              className={cn(
+                "min-h-0 min-w-0 border-t border-border bg-background md:border-l md:border-t-0",
+                mobileTab === "index" ? "flex" : "hidden md:flex",
+              )}
+            >
+              <EditorOutline
+                items={outline}
+                onSelect={jumpToOutlineItem}
+                scrollRoot={historyOpen ? null : previewEl}
+                className="h-full w-full"
+              />
+            </aside>
+          )}
         </div>
       </div>
     );
   }
 
   return (
-    <article id="post-article" className="animate-fade-up pb-16">
-      <ReadingProgress />
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <Link
-          href="/"
-          className={cn(
-            buttonVariants({ variant: "ghost", size: "sm" }),
-            "-ml-2 text-muted-foreground no-underline",
-          )}
-        >
-          <ArrowLeft data-icon="inline-start" />
-          All posts
-        </Link>
-        {canEdit ? (
-          <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={copied ? "Copied Markdown" : "Copy Markdown"}
-                    onClick={() => void copyMarkdown()}
-                  />
-                }
-              >
-                {copied ? (
-                  <Check className="size-4 text-primary" aria-hidden />
-                ) : (
-                  <Copy className="size-4" aria-hidden />
-                )}
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                {copied ? "Copied" : "Copy MD"}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Edit side by side"
-                    onClick={startEdit}
-                  />
-                }
-              >
-                <Columns2 className="size-4" aria-hidden />
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Edit side by side</TooltipContent>
-            </Tooltip>
-          </div>
-        ) : null}
-      </div>
-
-      {post.visibility === "private" ? (
-        <Badge variant="secondary" className="mb-4">
-          Private
-        </Badge>
-      ) : null}
-
-      <header className="mb-8">
-        <h1 className="font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-          {post.title}
-        </h1>
-        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
-          {post.publishedLabel ? (
-            <time dateTime={post.publishedDateTime}>{post.publishedLabel}</time>
-          ) : null}
-          {post.tags.length ? (
-            <ul className="flex flex-wrap gap-2">
-              {post.tags.map((tag) => (
-                <li key={tag.id}>
-                  <Badge
-                    variant="outline"
-                    render={<Link href={`/tags/${tag.slug}`} />}
-                    className="no-underline"
-                  >
-                    {tag.name}
-                  </Badge>
-                </li>
-              ))}
-            </ul>
+    <>
+      <article id="post-article" className="animate-fade-up pb-16">
+        <ReadingProgress />
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <Link
+            href="/"
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "-ml-2 text-muted-foreground no-underline",
+            )}
+          >
+            <ArrowLeft data-icon="inline-start" />
+            All posts
+          </Link>
+          {canEdit ? (
+            <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={copied ? "Copied Markdown" : "Copy Markdown"}
+                      onClick={() => void copyMarkdown()}
+                    />
+                  }
+                >
+                  {copied ? (
+                    <Check className="size-4 text-primary" aria-hidden />
+                  ) : (
+                    <Copy className="size-4" aria-hidden />
+                  )}
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {copied ? "Copied" : "Copy MD"}
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Edit side by side"
+                      onClick={startEdit}
+                    />
+                  }
+                >
+                  <Columns2 className="size-4" aria-hidden />
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Edit side by side</TooltipContent>
+              </Tooltip>
+            </div>
           ) : null}
         </div>
-        {post.excerpt ? (
-          <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
-            {post.excerpt}
-          </p>
+
+        {post.visibility === "private" ? (
+          <Badge variant="secondary" className="mb-4">
+            Private
+          </Badge>
         ) : null}
-      </header>
 
-      <Separator className="mb-10" />
+        <header className="mb-8">
+          <h1 className="font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+            {post.title}
+          </h1>
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
+            {post.publishedLabel ? (
+              <time dateTime={post.publishedDateTime}>
+                {post.publishedLabel}
+              </time>
+            ) : null}
+            {post.tags.length ? (
+              <ul className="flex flex-wrap gap-2">
+                {post.tags.map((tag) => (
+                  <li key={tag.id}>
+                    <Badge
+                      variant="outline"
+                      render={<Link href={`/tags/${tag.slug}`} />}
+                      className="no-underline"
+                    >
+                      {tag.name}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+          {post.excerpt ? (
+            <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
+              {post.excerpt}
+            </p>
+          ) : null}
+        </header>
 
-      <TableOfContents items={post.toc} />
+        <Separator className="mb-10" />
 
-      <div
-        className="prose-blog"
-        dangerouslySetInnerHTML={{ __html: post.bodyHtml }}
-      />
-    </article>
+        {outline.length > 0 ? (
+          <div className="mb-10 overflow-hidden rounded-lg border border-border min-[1320px]:hidden">
+            <EditorOutline
+              items={outline}
+              onSelect={jumpToReadHeading}
+              scrollRoot="window"
+            />
+          </div>
+        ) : null}
+
+        <div
+          className="prose-blog"
+          dangerouslySetInnerHTML={{ __html: post.bodyHtml }}
+        />
+      </article>
+
+      {outline.length > 0 ? (
+        <aside
+          className="fixed top-20 z-30 hidden h-[calc(100dvh-6.5rem)] w-56 flex-col overflow-hidden rounded-lg border border-border bg-background/95 shadow-soft min-[1320px]:flex"
+          style={{ left: "calc(50% + 24rem + 2.75rem)" }}
+        >
+          <EditorOutline
+            items={outline}
+            onSelect={jumpToReadHeading}
+            scrollRoot="window"
+            className="h-full min-h-0"
+          />
+        </aside>
+      ) : null}
+    </>
   );
 }

@@ -10,12 +10,9 @@ import { unified } from "unified";
 import { visit } from "unist-util-visit";
 import type { Root as MdastRoot } from "mdast";
 import type { Visibility } from "./db/schema";
+import type { TocItem } from "./toc";
 
-export type TocItem = {
-  id: string;
-  text: string;
-  level: number;
-};
+export type { TocItem } from "./toc";
 
 export type ParsedMarkdown = {
   title: string;

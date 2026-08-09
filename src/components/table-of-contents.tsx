@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import type { TocItem } from "@/lib/markdown";
+import type { TocItem } from "@/lib/toc";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
