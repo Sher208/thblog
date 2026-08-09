@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "thblog",
     short_name: "thblog",
-    description: "A personal blog for notes and ideas", 
+    description: "A personal blog for notes and ideas",
     start_url: "/",
     scope: "/",
     display: "standalone",
