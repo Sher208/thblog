@@ -3,6 +3,7 @@ import { Fraunces, IBM_Plex_Mono, Source_Sans_3 } from "next/font/google";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { ThemeProvider } from "@/components/theme-provider";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { getServerSession } from "@/lib/session";
 import "./globals.css";
 
@@ -68,18 +69,20 @@ export default async function RootLayout({
       >
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
         <ThemeProvider>
-          <a href="#main-content" className="skip-link">
-            Skip to content
-          </a>
-          <SiteHeader showAdmin={Boolean(session)} />
-          <main
-            id="main-content"
-            tabIndex={-1}
-            className="mx-auto min-h-[70dvh] max-w-3xl px-5 pt-8 outline-none sm:pt-10"
-          >
-            {children}
-          </main>
-          <SiteFooter />
+          <TooltipProvider>
+            <a href="#main-content" className="skip-link">
+              Skip to content
+            </a>
+            <SiteHeader showAdmin={Boolean(session)} />
+            <main
+              id="main-content"
+              tabIndex={-1}
+              className="mx-auto min-h-[70dvh] max-w-3xl px-5 pt-8 outline-none sm:pt-10"
+            >
+              {children}
+            </main>
+            <SiteFooter />
+          </TooltipProvider>
         </ThemeProvider>
       </body>
     </html>

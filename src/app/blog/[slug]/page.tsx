@@ -1,9 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { ReadingProgress } from "@/components/reading-progress";
 import { TableOfContents } from "@/components/table-of-contents";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { getPostBySlug } from "@/lib/posts";
 import { getServerSession } from "@/lib/session";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -59,45 +64,55 @@ export default async function BlogPostPage({ params }: Props) {
   return (
     <article id="post-article" className="animate-fade-up pb-16">
       <ReadingProgress />
+      <Link
+        href="/"
+        className={cn(
+          buttonVariants({ variant: "ghost", size: "sm" }),
+          "-ml-2 mb-6 text-muted-foreground no-underline",
+        )}
+      >
+        <ArrowLeft data-icon="inline-start" />
+        All posts
+      </Link>
+
       {post.visibility === "private" ? (
-        <p className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-accent">
+        <Badge variant="secondary" className="mb-4">
           Private
-        </p>
+        </Badge>
       ) : null}
-      <header className="mb-10 border-b border-border/70 pb-8">
+
+      <header className="mb-8">
         <h1 className="font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           {post.title}
         </h1>
-        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted">
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
           {date ? (
             <time dateTime={toDateTime(date)}>{formatDate(date)}</time>
           ) : null}
           {post.tags.length ? (
-            <>
-              <span className="text-border" aria-hidden>
-                ·
-              </span>
-              <ul className="flex flex-wrap gap-x-3 gap-y-1">
-                {post.tags.map((tag) => (
-                  <li key={tag.id}>
-                    <Link
-                      href={`/tags/${tag.slug}`}
-                      className="text-muted no-underline transition hover:text-accent"
-                    >
-                      {tag.name}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </>
+            <ul className="flex flex-wrap gap-2">
+              {post.tags.map((tag) => (
+                <li key={tag.id}>
+                  <Badge
+                    variant="outline"
+                    render={<Link href={`/tags/${tag.slug}`} />}
+                    className="no-underline"
+                  >
+                    {tag.name}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
           ) : null}
         </div>
         {post.excerpt ? (
-          <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted">
+          <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
             {post.excerpt}
           </p>
         ) : null}
       </header>
+
+      <Separator className="mb-10" />
 
       <TableOfContents items={post.toc} />
 

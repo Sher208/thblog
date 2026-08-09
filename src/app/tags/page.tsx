@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { listPublicTags } from "@/lib/posts";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 
 export const dynamic = "force-dynamic";
 
@@ -12,31 +14,33 @@ export default async function TagsPage() {
 
   return (
     <div className="animate-fade-up">
-      <header className="border-b border-border/70 pb-8">
+      <header className="pb-8">
         <h1 className="font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
           Topics
         </h1>
-        <p className="mt-3 text-lg text-muted">
+        <p className="mt-3 text-lg text-muted-foreground">
           Browse public posts by pattern or area.
         </p>
       </header>
-      <ul className="mt-2 divide-y divide-border/80">
-        {tags.map((tag) => (
-          <li key={tag.id} className="py-5">
+      <Separator className="mb-2" />
+      <ul>
+        {tags.map((tag, index) => (
+          <li key={tag.id}>
+            {index > 0 ? <Separator /> : null}
             <Link
               href={`/tags/${tag.slug}`}
-              className="flex min-h-11 items-baseline justify-between gap-4 text-foreground no-underline transition hover:text-accent"
+              className="flex min-h-14 items-center justify-between gap-4 py-4 text-foreground no-underline transition hover:text-primary"
             >
               <span className="font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight">
                 {tag.name}
               </span>
-              <span className="text-sm tabular-nums text-muted">{tag.count}</span>
+              <Badge variant="secondary">{tag.count}</Badge>
             </Link>
           </li>
         ))}
       </ul>
       {!tags.length ? (
-        <p className="mt-8 text-muted">No topics yet.</p>
+        <p className="mt-8 text-muted-foreground">No topics yet.</p>
       ) : null}
     </div>
   );

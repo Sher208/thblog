@@ -39,14 +39,14 @@ export default function AdminLoginPage() {
       <h1 className="font-[family-name:var(--font-display)] text-3xl tracking-tight">
         Admin
       </h1>
-      <p className="mt-2 text-sm text-muted">
+      <p className="mt-2 text-sm text-muted-foreground">
         Sign in to upload Markdown and manage visibility. Sessions last 60 days
         for the PWA.
       </p>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-4">
         <label className="block text-sm">
-          <span className="text-muted">Email</span>
+          <span className="text-muted-foreground">Email</span>
           <input
             type="email"
             required
@@ -57,7 +57,7 @@ export default function AdminLoginPage() {
           />
         </label>
         <label className="block text-sm">
-          <span className="text-muted">Password</span>
+          <span className="text-muted-foreground">Password</span>
           <input
             type="password"
             required

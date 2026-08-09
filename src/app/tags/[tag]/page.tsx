@@ -26,7 +26,7 @@ export default async function TagPage({ params }: Props) {
         <h1 className="font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
           {result.tag.name}
         </h1>
-        <p className="mt-3 text-lg text-muted">
+        <p className="mt-3 text-lg text-muted-foreground">
           {result.posts.length} public{" "}
           {result.posts.length === 1 ? "post" : "posts"}
         </p>

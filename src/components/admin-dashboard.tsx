@@ -121,14 +121,14 @@ export function AdminDashboard() {
           <h1 className="font-[family-name:var(--font-display)] text-3xl tracking-tight">
             Admin
           </h1>
-          <p className="mt-1 text-sm text-muted">
+          <p className="mt-1 text-sm text-muted-foreground">
             Upload Markdown, convert to posts, toggle public / private.
           </p>
         </div>
         <button
           type="button"
           onClick={() => void signOut()}
-          className="text-sm text-muted underline-offset-2 hover:text-foreground hover:underline"
+          className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
           Sign out
         </button>
@@ -147,14 +147,14 @@ export function AdminDashboard() {
         }}
         className={`mt-8 rounded-2xl border border-dashed px-5 py-10 text-center transition ${
           dragOver
-            ? "border-accent bg-accent-soft"
+            ? "border-primary bg-accent-soft"
             : "border-border bg-background-elevated/60"
         }`}
       >
         <p className="font-[family-name:var(--font-display)] text-xl">
           Drop a .md file
         </p>
-        <p className="mt-2 text-sm text-muted">
+        <p className="mt-2 text-sm text-muted-foreground">
           Frontmatter title, slug, tags, excerpt, and visibility are read
           automatically.
         </p>
@@ -176,16 +176,16 @@ export function AdminDashboard() {
       </section>
 
       {message ? (
-        <p className="mt-4 text-sm text-accent">{message}</p>
+        <p className="mt-4 text-sm text-primary">{message}</p>
       ) : null}
       {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
 
       <section className="mt-10">
-        <h2 className="text-xs font-medium uppercase tracking-[0.14em] text-muted">
+        <h2 className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
           All posts
         </h2>
         {loading ? (
-          <p className="mt-4 text-muted">Loading…</p>
+          <p className="mt-4 text-muted-foreground">Loading…</p>
         ) : (
           <ul className="mt-4 divide-y divide-border">
             {posts.map((post) => (
@@ -197,21 +197,21 @@ export function AdminDashboard() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Link
                       href={`/blog/${post.slug}`}
-                      className="truncate font-[family-name:var(--font-display)] text-lg hover:text-accent"
+                      className="truncate font-[family-name:var(--font-display)] text-lg hover:text-primary"
                     >
                       {post.title}
                     </Link>
                     <span
                       className={`rounded-full px-2 py-0.5 text-[11px] uppercase tracking-wide ${
                         post.visibility === "public"
-                          ? "bg-accent-soft text-accent"
-                          : "bg-code-bg text-muted"
+                          ? "bg-accent-soft text-primary"
+                          : "bg-code-bg text-muted-foreground"
                       }`}
                     >
                       {post.visibility}
                     </span>
                   </div>
-                  <p className="mt-1 truncate text-sm text-muted">
+                  <p className="mt-1 truncate text-sm text-muted-foreground">
                     /blog/{post.slug}
                     {post.tags.length
                       ? ` · ${post.tags.map((t) => t.name).join(", ")}`
@@ -222,14 +222,14 @@ export function AdminDashboard() {
                   <button
                     type="button"
                     onClick={() => void toggleVisibility(post)}
-                    className="rounded-full border border-border px-3 py-1.5 text-xs transition hover:border-accent"
+                    className="rounded-full border border-border px-3 py-1.5 text-xs transition hover:border-primary"
                   >
                     Make {post.visibility === "public" ? "private" : "public"}
                   </button>
                   <button
                     type="button"
                     onClick={() => void removePost(post)}
-                    className="rounded-full border border-border px-3 py-1.5 text-xs text-muted transition hover:border-red-500 hover:text-red-600"
+                    className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition hover:border-red-500 hover:text-red-600"
                   >
                     Delete
                   </button>
@@ -239,7 +239,7 @@ export function AdminDashboard() {
           </ul>
         )}
         {!loading && !posts.length ? (
-          <p className="mt-4 text-muted">No posts yet — upload a Markdown file.</p>
+          <p className="mt-4 text-muted-foreground">No posts yet — upload a Markdown file.</p>
         ) : null}
       </section>
     </div>

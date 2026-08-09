@@ -7,6 +7,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Moon, Sun } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type Theme = "light" | "dark";
 
@@ -87,14 +94,28 @@ export function ThemeToggle() {
   const nextLabel = isDark ? "Switch to light theme" : "Switch to dark theme";
 
   return (
-    <button
-      type="button"
-      aria-label={ready ? nextLabel : "Toggle color theme"}
-      aria-pressed={isDark}
-      className="inline-flex min-h-10 items-center text-[0.8125rem] text-muted transition hover:text-foreground"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-    >
-      {!ready ? "Theme" : isDark ? "Light" : "Dark"}
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={ready ? nextLabel : "Toggle color theme"}
+            aria-pressed={isDark}
+            onClick={() => setTheme(isDark ? "light" : "dark")}
+          />
+        }
+      >
+        {isDark ? (
+          <Sun className="size-4" aria-hidden />
+        ) : (
+          <Moon className="size-4" aria-hidden />
+        )}
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {ready ? nextLabel : "Toggle color theme"}
+      </TooltipContent>
+    </Tooltip>
   );
 }

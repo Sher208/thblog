@@ -8,7 +8,7 @@ export const metadata = {
 
 export default function Page() {
   return (
-    <Suspense fallback={<p className="text-muted">Loading…</p>}>
+    <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
       <AdminLoginPage />
     </Suspense>
   );

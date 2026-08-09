@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { PostWithTags } from "@/lib/posts";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 
 function formatDate(date: Date | null) {
   if (!date) return "";
@@ -23,24 +25,25 @@ export function PostList({
   emptyLabel?: string;
 }) {
   if (!posts.length) {
-    return <p className="py-8 text-muted">{emptyLabel}</p>;
+    return <p className="py-8 text-muted-foreground">{emptyLabel}</p>;
   }
 
   return (
-    <ul className="divide-y divide-border/80">
+    <ul>
       {posts.map((post, index) => {
         const date = post.publishedAt ?? post.createdAt;
         return (
           <li
             key={post.id}
-            className={`animate-fade-up py-7 stagger-${Math.min(index + 1, 3)}`}
+            className={`animate-fade-up stagger-${Math.min(index + 1, 3)}`}
           >
-            <article>
+            {index > 0 ? <Separator /> : null}
+            <article className="group py-7 transition-colors">
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight sm:text-2xl">
                   <Link
                     href={`/blog/${post.slug}`}
-                    className="text-foreground no-underline transition hover:text-accent"
+                    className="text-foreground no-underline transition group-hover:text-primary"
                   >
                     {post.title}
                   </Link>
@@ -48,27 +51,28 @@ export function PostList({
                 {date ? (
                   <time
                     dateTime={toDateTime(date)}
-                    className="shrink-0 text-sm tabular-nums text-muted"
+                    className="shrink-0 text-sm tabular-nums text-muted-foreground"
                   >
                     {formatDate(date)}
                   </time>
                 ) : null}
               </div>
               {post.excerpt ? (
-                <p className="mt-2.5 max-w-xl text-base leading-relaxed text-muted">
+                <p className="mt-2.5 max-w-xl text-base leading-relaxed text-muted-foreground">
                   {post.excerpt}
                 </p>
               ) : null}
               {post.tags.length ? (
-                <ul className="mt-3.5 flex flex-wrap gap-x-3 gap-y-1.5">
+                <ul className="mt-3.5 flex flex-wrap gap-2">
                   {post.tags.map((tag) => (
                     <li key={tag.id}>
-                      <Link
-                        href={`/tags/${tag.slug}`}
-                        className="text-sm text-accent no-underline transition hover:underline"
+                      <Badge
+                        variant="secondary"
+                        render={<Link href={`/tags/${tag.slug}`} />}
+                        className="no-underline"
                       >
                         {tag.name}
-                      </Link>
+                      </Badge>
                     </li>
                   ))}
                 </ul>

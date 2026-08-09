@@ -1,6 +1,7 @@
 import { PostList } from "@/components/post-list";
 import { listPublicPosts, listPublicTags } from "@/lib/posts";
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
 
@@ -15,25 +16,18 @@ export default async function HomePage() {
       <h1 className="sr-only">Latest posts</h1>
 
       {tags.length ? (
-        <nav
-          aria-label="Browse by topic"
-          className="animate-fade-up mb-8 flex flex-wrap items-baseline gap-x-3 gap-y-2 text-sm"
-        >
-          <p className="shrink-0 text-muted">Browse by topic</p>
-          <ul className="flex flex-wrap items-baseline gap-x-1 gap-y-1">
-            {tags.map((tag, index) => (
-              <li key={tag.id} className="flex items-baseline gap-x-1">
-                {index > 0 ? (
-                  <span className="text-border" aria-hidden>
-                    ·
-                  </span>
-                ) : null}
-                <Link
-                  href={`/tags/${tag.slug}`}
-                  className="text-foreground no-underline transition hover:text-accent"
+        <nav aria-label="Browse by topic" className="animate-fade-up mb-8">
+          <p className="mb-3 text-sm text-muted-foreground">Browse by topic</p>
+          <ul className="flex flex-wrap gap-2">
+            {tags.map((tag) => (
+              <li key={tag.id}>
+                <Badge
+                  variant="outline"
+                  render={<Link href={`/tags/${tag.slug}`} />}
+                  className="no-underline"
                 >
                   {tag.name}
-                </Link>
+                </Badge>
               </li>
             ))}
           </ul>
