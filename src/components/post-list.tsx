@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { PostWithTags } from "@/lib/posts";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 
 function formatDate(date: Date | null) {
   if (!date) return "";
@@ -29,7 +28,7 @@ export function PostList({
   }
 
   return (
-    <ul>
+    <ul className="flex flex-col gap-4">
       {posts.map((post, index) => {
         const date = post.publishedAt ?? post.createdAt;
         return (
@@ -37,13 +36,12 @@ export function PostList({
             key={post.id}
             className={`animate-fade-up stagger-${Math.min(index + 1, 3)}`}
           >
-            {index > 0 ? <Separator /> : null}
-            <article className="group py-7 transition-colors">
+            <article className="group relative rounded-lg border border-border px-4 py-7 transition-colors hover:bg-muted/40 sm:px-5">
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight sm:text-2xl">
                   <Link
                     href={`/blog/${post.slug}`}
-                    className="text-foreground no-underline transition group-hover:text-primary"
+                    className="text-foreground no-underline transition after:absolute after:inset-0 group-hover:text-primary"
                   >
                     {post.title}
                   </Link>
@@ -63,7 +61,7 @@ export function PostList({
                 </p>
               ) : null}
               {post.tags.length ? (
-                <ul className="mt-3.5 flex flex-wrap gap-2">
+                <ul className="relative z-10 mt-3.5 flex flex-wrap gap-2">
                   {post.tags.map((tag) => (
                     <li key={tag.id}>
                       <Badge
