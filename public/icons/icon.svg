@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="thblog">
+  <rect width="512" height="512" rx="96" fill="#0c6561"/>
+  <rect x="64" y="64" width="384" height="384" rx="76" fill="#f4f6f8"/>
+  <!-- stylized th: teal inverted L + dark stem -->
+  <path fill="#0c6561" d="M163 143h154v61H215v164h-52V143z"/>
+  <rect x="281" y="204" width="67" height="164" fill="#121a22"/>
+</svg>
