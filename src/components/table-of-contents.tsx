@@ -42,7 +42,7 @@ export function TableOfContents({ items }: { items: TocItem[] }) {
             {items.map((item) => (
               <li
                 key={item.id}
-                className={item.level === 3 ? "pl-3" : undefined}
+                className={item.level >= 3 ? "pl-3" : undefined}
               >
                 <a
                   href={`#${item.id}`}

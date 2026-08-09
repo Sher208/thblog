@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { ArrowLeft, Check, Columns2, Copy, History } from "lucide-react";
 import { ReadingProgress } from "@/components/reading-progress";
 import { TableOfContents } from "@/components/table-of-contents";
@@ -60,6 +60,64 @@ type PostVersionItem = {
 
 const AUTOSAVE_MS = 60 * 1000;
 const PREVIEW_DEBOUNCE_MS = 120;
+
+/** Scroll one pane to match another by percentage (avoids feedback loops via lock). */
+function syncScrollByRatio(
+  source: HTMLElement,
+  target: HTMLElement,
+  lock: { current: boolean },
+) {
+  if (lock.current) return;
+  const sourceMax = source.scrollHeight - source.clientHeight;
+  const targetMax = target.scrollHeight - target.clientHeight;
+  if (sourceMax <= 0 || targetMax <= 0) return;
+
+  lock.current = true;
+  target.scrollTop = (source.scrollTop / sourceMax) * targetMax;
+  requestAnimationFrame(() => {
+    lock.current = false;
+  });
+}
+
+/** Find the source line for a preview heading (matches `#` / `##` / `###` text). */
+function findHeadingLineIndex(bodyMd: string, headingText: string): number {
+  const lines = bodyMd.split("\n");
+  const needle = headingText.trim().toLowerCase();
+  if (!needle) return -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(lines[i] ?? "");
+    if (!match) continue;
+    if ((match[2] ?? "").trim().toLowerCase() === needle) return i;
+  }
+  return -1;
+}
+
+function scrollTextareaToLine(
+  textarea: HTMLTextAreaElement,
+  lineIndex: number,
+) {
+  const lines = textarea.value.split("\n");
+  const safeIndex = Math.max(0, Math.min(lineIndex, lines.length - 1));
+  let start = 0;
+  for (let i = 0; i < safeIndex; i++) {
+    start += (lines[i]?.length ?? 0) + 1;
+  }
+  const line = lines[safeIndex] ?? "";
+  const end = start + line.length;
+
+  textarea.focus();
+  textarea.setSelectionRange(start, end);
+
+  const styles = window.getComputedStyle(textarea);
+  const lineHeight = Number.parseFloat(styles.lineHeight) || 20;
+  const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+  const targetTop = paddingTop + safeIndex * lineHeight;
+  textarea.scrollTop = Math.max(
+    0,
+    targetTop - textarea.clientHeight / 3,
+  );
+}
 
 function draftFromPost(post: EditablePost): Draft {
   return {
@@ -135,9 +193,50 @@ export function PostWithEditor({
   const savingRef = useRef(false);
   const previewRequestId = useRef(0);
   const postIdRef = useRef(post.id);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const scrollSyncLock = useRef(false);
 
   draftRef.current = draft;
   postIdRef.current = post.id;
+
+  function handleEditorScroll() {
+    const editor = editorRef.current;
+    const preview = previewRef.current;
+    if (!editor || !preview || historyOpen) return;
+    syncScrollByRatio(editor, preview, scrollSyncLock);
+  }
+
+  function handlePreviewScroll() {
+    const editor = editorRef.current;
+    const preview = previewRef.current;
+    if (!editor || !preview || historyOpen) return;
+    syncScrollByRatio(preview, editor, scrollSyncLock);
+  }
+
+  function handlePreviewClick(event: MouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement | null;
+    const heading = target?.closest?.("h1, h2, h3, h4, h5, h6");
+    if (!heading || !previewRef.current?.contains(heading)) return;
+
+    const lineIndex = findHeadingLineIndex(
+      draftRef.current.bodyMd,
+      heading.textContent ?? "",
+    );
+    if (lineIndex < 0) return;
+
+    event.preventDefault();
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    if (mobileTab !== "write") {
+      setMobileTab("write");
+      requestAnimationFrame(() => scrollTextareaToLine(editor, lineIndex));
+      return;
+    }
+
+    scrollTextareaToLine(editor, lineIndex);
+  }
 
   useEffect(() => {
     if (canEdit && searchParams.get("edit") === "1") {
@@ -627,16 +726,21 @@ export function PostWithEditor({
             )}
           >
             <textarea
+              ref={editorRef}
               value={draft.bodyMd}
               onChange={(e) =>
                 setDraft({ ...draft, bodyMd: e.target.value })
               }
+              onScroll={handleEditorScroll}
               spellCheck={false}
               aria-label="Markdown body"
               className="h-full min-h-[50dvh] w-full resize-none bg-code-bg/40 px-4 py-4 font-mono text-[13px] leading-relaxed outline-none sm:px-5 md:min-h-0"
             />
           </div>
           <div
+            ref={previewRef}
+            onScroll={handlePreviewScroll}
+            onClick={handlePreviewClick}
             className={cn(
               "min-h-0 overflow-y-auto px-4 py-4 sm:px-5",
               mobileTab === "write" && !historyOpen
@@ -684,8 +788,11 @@ export function PostWithEditor({
                 {draft.excerpt.trim() ? (
                   <p className="mb-6 text-muted-foreground">{draft.excerpt}</p>
                 ) : null}
+                <p className="mb-4 text-xs text-muted-foreground">
+                  Scroll syncs with the editor · click a heading to jump to it
+                </p>
                 <div
-                  className="prose-blog"
+                  className="prose-blog [&_h1]:cursor-pointer [&_h2]:cursor-pointer [&_h3]:cursor-pointer"
                   dangerouslySetInnerHTML={{ __html: previewHtml }}
                 />
               </>

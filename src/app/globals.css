@@ -222,6 +222,7 @@ a {
   margin-top: 1.2em;
 }
 
+.prose-blog h1,
 .prose-blog h2,
 .prose-blog h3 {
   font-family: var(--font-display), Georgia, serif;
@@ -231,6 +232,11 @@ a {
   margin-top: 2.15em;
   scroll-margin-top: 5.5rem;
   color: var(--foreground);
+}
+
+.prose-blog h1 {
+  font-size: 1.85rem;
+  margin-top: 1.6em;
 }
 
 .prose-blog h2 {
