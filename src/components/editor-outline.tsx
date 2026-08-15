@@ -249,7 +249,7 @@ export function EditorOutline({
                     className={cn(
                       "min-w-0 flex-1 px-2.5 py-1.5 text-left text-sm",
                       item.level <= 1 && "font-semibold",
-                      item.level === 2 && "font-medium",
+                      item.level === 2 && "pl-5 font-semibold",
                       item.level >= 3 && "pl-5 text-[13px]",
                     )}
                   >
