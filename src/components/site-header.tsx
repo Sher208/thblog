@@ -1,16 +1,15 @@
+"use client";
+
 import Link from "next/link";
 import { ThemeToggle } from "./theme-provider";
 import { buttonVariants } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
-export function SiteHeader({
-  brand = "thblog",
-  showAdmin = false,
-}: {
-  brand?: string;
-  showAdmin?: boolean;
-}) {
+export function SiteHeader({ brand = "thblog" }: { brand?: string }) {
+  const { data: session } = authClient.useSession();
+
   return (
     <header className="sticky top-0 z-40 bg-[var(--header-bg)] backdrop-blur-md">
       <div className="mx-auto flex h-12 max-w-3xl items-center justify-between gap-4 px-5">
@@ -30,7 +29,7 @@ export function SiteHeader({
           >
             Topics
           </Link>
-          {showAdmin ? (
+          {session ? (
             <Link
               href="/admin"
               className={cn(

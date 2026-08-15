@@ -1,6 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import { useLinkStatus } from "next/link";
+import { Loader2 } from "lucide-react";
 import type { PostWithTags } from "@/lib/posts";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 function formatDate(date: Date | null) {
   if (!date) return "";
@@ -14,6 +19,29 @@ function formatDate(date: Date | null) {
 function toDateTime(date: Date | null) {
   if (!date) return undefined;
   return date.toISOString().slice(0, 10);
+}
+
+function PostLinkContents({ title }: { title: string }) {
+  const { pending } = useLinkStatus();
+
+  return (
+    <>
+      <span className={cn(pending && "text-primary")}>{title}</span>
+      {pending ? (
+        <Loader2
+          className="ml-2 inline size-4 animate-spin text-primary align-[-0.125em]"
+          aria-hidden
+        />
+      ) : null}
+      {pending ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-lg bg-primary/5 ring-1 ring-inset ring-primary/25"
+        />
+      ) : null}
+      <span className="sr-only">{pending ? "Loading article" : null}</span>
+    </>
+  );
 }
 
 export function PostList({
@@ -43,7 +71,7 @@ export function PostList({
                     href={`/blog/${post.slug}`}
                     className="text-foreground no-underline transition after:absolute after:inset-0 group-hover:text-primary"
                   >
-                    {post.title}
+                    <PostLinkContents title={post.title} />
                   </Link>
                 </h2>
                 {date ? (

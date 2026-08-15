@@ -5,7 +5,6 @@ import { SiteHeader } from "@/components/site-header";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getServerSession } from "@/lib/session";
 import "./globals.css";
 
 const display = Fraunces({
@@ -56,13 +55,11 @@ export const viewport: Viewport = {
 
 const themeBootScript = `(function(){try{var k='thblog-theme';var t=null;var m=document.cookie.match(/(?:^|;\\s*)thblog-theme=(light|dark)/);if(m)t=m[1];if(!t){try{t=localStorage.getItem(k)}catch(e){}}if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}if(t==='dark')document.documentElement.classList.add('dark');else document.documentElement.classList.remove('dark')}catch(e){}})();`;
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await getServerSession();
-
   return (
     <html lang="en" suppressHydrationWarning>
       <body
@@ -75,7 +72,7 @@ export default async function RootLayout({
               <a href="#main-content" className="skip-link">
                 Skip to content
               </a>
-              <SiteHeader showAdmin={Boolean(session)} />
+              <SiteHeader />
               <main
                 id="main-content"
                 tabIndex={-1}

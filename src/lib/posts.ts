@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { cache } from "react";
 import { db } from "./db";
 import {
   postTags,
@@ -138,20 +139,20 @@ export async function listAllPosts(): Promise<PostWithTags[]> {
   return rows.map((row) => mapPost(row, row.postTags));
 }
 
-export async function getPostBySlug(
-  slug: string,
-): Promise<PostWithTags | null> {
-  const row = await db.query.posts.findFirst({
-    where: eq(posts.slug, slug),
-    with: {
-      postTags: {
-        with: { tag: true },
+export const getPostBySlug = cache(
+  async (slug: string): Promise<PostWithTags | null> => {
+    const row = await db.query.posts.findFirst({
+      where: eq(posts.slug, slug),
+      with: {
+        postTags: {
+          with: { tag: true },
+        },
       },
-    },
-  });
+    });
 
-  return row ? mapPost(row, row.postTags) : null;
-}
+    return row ? mapPost(row, row.postTags) : null;
+  },
+);
 
 export async function getPostById(id: string): Promise<PostWithTags | null> {
   const row = await db.query.posts.findFirst({

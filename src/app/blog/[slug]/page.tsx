@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
 import { PostWithEditor } from "@/components/post-with-editor";
 import { getPostBySlug } from "@/lib/posts";
 import { getServerSession } from "@/lib/session";
@@ -56,23 +55,21 @@ export default async function BlogPostPage({ params }: Props) {
   const date = post.publishedAt ?? post.createdAt;
 
   return (
-    <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
-      <PostWithEditor
-        canEdit={Boolean(session)}
-        post={{
-          id: post.id,
-          slug: post.slug,
-          title: post.title,
-          excerpt: post.excerpt,
-          bodyMd: post.bodyMd,
-          bodyHtml: post.bodyHtml,
-          visibility: post.visibility,
-          publishedLabel: formatDate(date),
-          publishedDateTime: toDateTime(date),
-          tags: post.tags,
-          toc: post.toc,
-        }}
-      />
-    </Suspense>
+    <PostWithEditor
+      canEdit={Boolean(session)}
+      post={{
+        id: post.id,
+        slug: post.slug,
+        title: post.title,
+        excerpt: post.excerpt,
+        bodyMd: post.bodyMd,
+        bodyHtml: post.bodyHtml,
+        visibility: post.visibility,
+        publishedLabel: formatDate(date),
+        publishedDateTime: toDateTime(date),
+        tags: post.tags,
+        toc: post.toc,
+      }}
+    />
   );
 }
