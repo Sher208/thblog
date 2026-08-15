@@ -1,93 +1,12 @@
 "use client";
 
 import {
-  useLayoutEffect,
+  useEffect,
   useRef,
-  useState,
   type HTMLAttributes,
   type MouseEventHandler,
 } from "react";
-import { createPortal } from "react-dom";
-import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type CodeHost = {
-  key: string;
-  host: HTMLElement;
-  pre: HTMLPreElement;
-  lang: string | null;
-};
-
-function collectCodeHosts(root: HTMLElement): CodeHost[] {
-  const figures = [
-    ...root.querySelectorAll<HTMLElement>("[data-rehype-pretty-code-figure]"),
-  ];
-  const plainPres = [...root.querySelectorAll<HTMLPreElement>("pre")].filter(
-    (pre) => !pre.closest("[data-rehype-pretty-code-figure]"),
-  );
-
-  return [...figures, ...plainPres].flatMap((host, index) => {
-    const pre =
-      host.tagName === "PRE"
-        ? (host as HTMLPreElement)
-        : host.querySelector("pre");
-    if (!pre) return [];
-
-    host.classList.add("code-block-host");
-    const lang = pre.getAttribute("data-language");
-    return [
-      {
-        key: `${index}-${lang ?? "code"}-${(pre.textContent ?? "").slice(0, 24)}`,
-        host,
-        pre,
-        lang: lang && lang !== "txt" ? lang : null,
-      },
-    ];
-  });
-}
-
-function CopyButton({
-  pre,
-  lang,
-}: {
-  pre: HTMLPreElement;
-  lang: string | null;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  async function onCopy() {
-    try {
-      await navigator.clipboard.writeText(pre.textContent ?? "");
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      setCopied(false);
-    }
-  }
-
-  return (
-    <div className="code-block-toolbar" data-code-copy="">
-      {lang ? <span className="code-block-lang">{lang}</span> : null}
-      <button
-        type="button"
-        className="code-block-copy"
-        aria-label={copied ? "Copied" : "Copy code"}
-        data-copied={copied ? "true" : undefined}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          void onCopy();
-        }}
-      >
-        {copied ? (
-          <Check className="size-3.5" aria-hidden />
-        ) : (
-          <Copy className="size-3.5" aria-hidden />
-        )}
-      </button>
-    </div>
-  );
-}
 
 type ProseContentProps = {
   html: string;
@@ -95,7 +14,7 @@ type ProseContentProps = {
   onClick?: MouseEventHandler<HTMLDivElement>;
 } & Omit<HTMLAttributes<HTMLDivElement>, "children" | "dangerouslySetInnerHTML">;
 
-/** Renders Markdown HTML and mounts copy buttons onto fenced code blocks. */
+/** Renders Markdown HTML and handles code-block copy buttons. */
 export function ProseContent({
   html,
   className,
@@ -103,32 +22,63 @@ export function ProseContent({
   ...rest
 }: ProseContentProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [hosts, setHosts] = useState<CodeHost[]>([]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const root = ref.current;
-    if (!root) {
-      setHosts([]);
-      return;
+    if (!root) return;
+    const container = root;
+
+    async function handleClick(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest<HTMLButtonElement>("[data-code-copy-btn]");
+      if (!button || !container.contains(button)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const host = button.closest<HTMLElement>(
+        "[data-rehype-pretty-code-figure], .code-block-host, pre",
+      );
+      const pre =
+        host?.tagName === "PRE"
+          ? (host as HTMLPreElement)
+          : host?.querySelector("pre");
+      if (!pre) return;
+
+      try {
+        await navigator.clipboard.writeText(pre.textContent ?? "");
+        button.dataset.copied = "true";
+        button.setAttribute("aria-label", "Copied");
+        const copyIcon = button.querySelector<HTMLElement>(
+          ".code-block-copy-icon--copy",
+        );
+        const checkIcon = button.querySelector<HTMLElement>(
+          ".code-block-copy-icon--check",
+        );
+        if (copyIcon) copyIcon.hidden = true;
+        if (checkIcon) checkIcon.hidden = false;
+        window.setTimeout(() => {
+          delete button.dataset.copied;
+          button.setAttribute("aria-label", "Copy code");
+          if (copyIcon) copyIcon.hidden = false;
+          if (checkIcon) checkIcon.hidden = true;
+        }, 1600);
+      } catch {
+        button.setAttribute("aria-label", "Copy failed");
+      }
     }
-    setHosts(collectCodeHosts(root));
+
+    root.addEventListener("click", handleClick);
+    return () => container.removeEventListener("click", handleClick);
   }, [html]);
 
   return (
-    <>
-      <div
-        ref={ref}
-        className={cn("prose-blog", className)}
-        onClick={onClick}
-        dangerouslySetInnerHTML={{ __html: html }}
-        {...rest}
-      />
-      {hosts.map((item) =>
-        createPortal(
-          <CopyButton key={item.key} pre={item.pre} lang={item.lang} />,
-          item.host,
-        ),
-      )}
-    </>
+    <div
+      ref={ref}
+      className={cn("prose-blog", className)}
+      onClick={onClick}
+      dangerouslySetInnerHTML={{ __html: html }}
+      {...rest}
+    />
   );
 }

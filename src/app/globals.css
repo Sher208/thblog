@@ -333,8 +333,8 @@ a {
 
 .prose-blog .code-block-toolbar {
   position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
+  top: 0.45rem;
+  right: 0.45rem;
   z-index: 5;
   display: flex;
   align-items: center;
@@ -353,9 +353,9 @@ a {
   text-transform: lowercase;
   color: var(--muted-foreground);
   user-select: none;
-  padding: 0.15rem 0.35rem;
+  padding: 0.2rem 0.4rem;
   border-radius: 0.35rem;
-  background: color-mix(in srgb, var(--background) 82%, transparent);
+  background: color-mix(in srgb, var(--background) 88%, transparent);
   border: 1px solid var(--border);
 }
 
@@ -363,10 +363,11 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
+  width: 1.85rem;
+  height: 1.85rem;
+  padding: 0;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: 0.45rem;
   background: var(--background);
   color: var(--foreground);
   cursor: pointer;
@@ -375,6 +376,11 @@ a {
     color 140ms ease,
     background-color 140ms ease,
     border-color 140ms ease;
+}
+
+.prose-blog .code-block-copy-icon {
+  display: block;
+  flex-shrink: 0;
 }
 
 .prose-blog .code-block-copy:hover {
@@ -390,7 +396,7 @@ a {
 
 .prose-blog [data-rehype-pretty-code-figure] pre,
 .prose-blog pre.code-block-host {
-  padding-top: 2.6rem;
+  padding-top: 2.5rem;
   padding-right: 1.1rem;
 }
 
