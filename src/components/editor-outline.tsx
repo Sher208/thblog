@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { Bookmark, BookmarkCheck } from "lucide-react";
+import { Bookmark, BookmarkCheck, ChevronRight } from "lucide-react";
 import type { TocItem } from "@/lib/toc";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +17,9 @@ export function EditorOutline({
   onToggleBookmark,
   /** Jump to the current bookmark. Shown as a header icon when bookmarks are enabled. */
   onJumpToBookmark,
+  /** Collapse the pane sideways (edit view). */
+  onCollapse,
+  collapseDisabled = false,
 }: {
   items: TocItem[];
   onSelect: (item: TocItem) => void;
@@ -25,6 +28,8 @@ export function EditorOutline({
   bookmarkedId?: string | null;
   onToggleBookmark?: (item: TocItem) => void;
   onJumpToBookmark?: () => void;
+  onCollapse?: () => void;
+  collapseDisabled?: boolean;
 }) {
   const [activeId, setActiveId] = useState<string | null>(
     () => items[0]?.id ?? null,
@@ -184,23 +189,39 @@ export function EditorOutline({
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           Index
         </p>
-        {bookmarksEnabled ? (
-          <button
-            type="button"
-            onClick={() => onJumpToBookmark?.()}
-            disabled={!hasBookmark}
-            aria-label="Jump to bookmark"
-            title={hasBookmark ? "Jump to bookmark" : "No bookmark set"}
-            className={cn(
-              "inline-flex size-6 items-center justify-center rounded-md transition-colors",
-              hasBookmark
-                ? "text-primary hover:bg-accent-soft"
-                : "cursor-not-allowed text-muted-foreground/35",
-            )}
-          >
-            <BookmarkCheck className="size-3.5" strokeWidth={2.25} aria-hidden />
-          </button>
-        ) : null}
+        <div className="flex items-center gap-0.5">
+          {bookmarksEnabled ? (
+            <button
+              type="button"
+              onClick={() => onJumpToBookmark?.()}
+              disabled={!hasBookmark}
+              aria-label="Jump to bookmark"
+              title={hasBookmark ? "Jump to bookmark" : "No bookmark set"}
+              className={cn(
+                "inline-flex size-6 items-center justify-center rounded-md transition-colors",
+                hasBookmark
+                  ? "text-primary hover:bg-accent-soft"
+                  : "cursor-not-allowed text-muted-foreground/35",
+              )}
+            >
+              <BookmarkCheck className="size-3.5" strokeWidth={2.25} aria-hidden />
+            </button>
+          ) : null}
+          {onCollapse ? (
+            <button
+              type="button"
+              onClick={onCollapse}
+              disabled={collapseDisabled}
+              aria-label="Hide Index"
+              title={
+                collapseDisabled ? "Keep at least one pane open" : "Hide Index"
+              }
+              className="hidden size-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent-soft hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35 md:inline-flex"
+            >
+              <ChevronRight className="size-3.5" aria-hidden />
+            </button>
+          ) : null}
+        </div>
       </div>
       {items.length === 0 ? (
         <p className="px-4 py-4 text-sm text-muted-foreground">

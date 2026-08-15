@@ -11,7 +11,17 @@ import {
   type MutableRefObject,
   type RefObject,
 } from "react";
-import { ArrowLeft, Check, Columns2, Copy, History } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Columns2,
+  Copy,
+  History,
+  Pencil,
+} from "lucide-react";
 import { EditorOutline } from "@/components/editor-outline";
 import { RelatedPosts, SeriesNav } from "@/components/post-relations";
 import { ReadingProgress } from "@/components/reading-progress";
@@ -70,6 +80,84 @@ type Draft = {
 };
 
 type PreviewTab = "write" | "preview" | "index";
+
+type EditorPanes = {
+  write: boolean;
+  preview: boolean;
+  index: boolean;
+};
+
+const ALL_PANES_OPEN: EditorPanes = {
+  write: true,
+  preview: true,
+  index: true,
+};
+
+function EditorPaneRail({
+  label,
+  onExpand,
+  edge,
+}: {
+  label: string;
+  onExpand: () => void;
+  edge: "start" | "end";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      aria-label={`Show ${label}`}
+      title={`Show ${label}`}
+      className={cn(
+        "hidden h-full w-9 shrink-0 flex-col items-center gap-2 border-border bg-background py-3 text-muted-foreground transition hover:bg-accent-soft hover:text-foreground md:flex",
+        edge === "start" ? "border-r" : "border-l",
+      )}
+    >
+      {edge === "start" ? (
+        <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+      ) : (
+        <ChevronLeft className="size-3.5 shrink-0" aria-hidden />
+      )}
+      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] [writing-mode:vertical-rl]">
+        {label}
+      </span>
+    </button>
+  );
+}
+
+function EditorPaneHeader({
+  label,
+  onCollapse,
+  collapseDisabled,
+  collapseEdge = "start",
+}: {
+  label: string;
+  onCollapse: () => void;
+  collapseDisabled?: boolean;
+  collapseEdge?: "start" | "end";
+}) {
+  return (
+    <div className="hidden shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-1.5 md:flex">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        {label}
+      </p>
+      <button
+        type="button"
+        disabled={collapseDisabled}
+        onClick={onCollapse}
+        aria-label={`Hide ${label}`}
+        title={collapseDisabled ? "Keep at least one pane open" : `Hide ${label}`}
+        className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent-soft hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+      >
+        {collapseEdge === "start" ? (
+          <ChevronLeft className="size-3.5" aria-hidden />
+        ) : (
+          <ChevronRight className="size-3.5" aria-hidden />
+        )}
+      </button>
+    </div>
+  );
+}
 
 type PostVersionItem = {
   id: string;
@@ -139,7 +227,7 @@ function MarkdownBodyTextarea({
       onScroll={onScroll}
       spellCheck={false}
       aria-label="Markdown body"
-      className="h-full min-h-[50dvh] w-full resize-none bg-code-bg/40 px-4 py-4 font-mono text-[13px] leading-relaxed outline-none sm:px-5 md:min-h-0"
+      className="h-full min-h-[50dvh] w-full min-w-0 flex-1 resize-none bg-code-bg/40 px-4 py-4 font-mono text-[13px] leading-relaxed outline-none sm:px-5 md:min-h-0"
     />
   );
 }
@@ -200,6 +288,27 @@ function scrollTextareaToLine(
     0,
     targetTop - textarea.clientHeight / 3,
   );
+}
+
+/** Heading currently in view while reading (matches outline scroll-spy). */
+function getActiveReadHeading(items: TocItem[]): TocItem | null {
+  if (!items.length) return null;
+
+  const hash = window.location.hash.replace(/^#/, "");
+  if (hash) {
+    const fromHash = items.find((item) => item.id === hash);
+    if (fromHash && document.getElementById(fromHash.id)) return fromHash;
+  }
+
+  const marker = 140;
+  let current: TocItem | null = items[0] ?? null;
+  for (const item of items) {
+    const heading = document.getElementById(item.id);
+    if (!heading) continue;
+    if (heading.getBoundingClientRect().top <= marker) current = item;
+    else break;
+  }
+  return current;
 }
 
 function draftFromPost(post: EditablePost): Draft {
@@ -301,6 +410,9 @@ export function PostWithEditor({
   const [bookmarkedHeadingId, setBookmarkedHeadingId] = useState<string | null>(
     null,
   );
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [showFloatingEdit, setShowFloatingEdit] = useState(false);
+  const [paneOpen, setPaneOpen] = useState<EditorPanes>(ALL_PANES_OPEN);
 
   const draftRef = useRef(draft);
   const bodyMdRef = useRef(post.bodyMd);
@@ -312,6 +424,8 @@ export function PostWithEditor({
   const previewRef = useRef<HTMLDivElement | null>(null);
   const scrollSyncLock = useRef(false);
   const scrollRafId = useRef(0);
+  const pendingEditJumpRef = useRef<TocItem | null>(null);
+  const topEditControlsRef = useRef<HTMLDivElement | null>(null);
 
   // Body lives in bodyMdRef during typing; merge so save never sees a stale body.
   draftRef.current = { ...draft, bodyMd: bodyMdRef.current };
@@ -491,6 +605,70 @@ export function PostWithEditor({
     setBookmarkedHeadingId(getSectionBookmark(post.slug));
   }, [editing, post.slug]);
 
+  useEffect(() => {
+    if (!editing || !canEdit) return;
+    const item = pendingEditJumpRef.current;
+    if (!item) return;
+    pendingEditJumpRef.current = null;
+
+    // Wait for the editor overlay + textarea to mount before jumping.
+    let cancelled = false;
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (cancelled) return;
+
+        const preview = previewRef.current;
+        const editor = editorRef.current;
+
+        if (preview) {
+          const heading = preview.querySelector<HTMLElement>(
+            `#${CSS.escape(item.id)}`,
+          );
+          if (heading) {
+            scrollSyncLock.current = true;
+            preview.scrollTop = Math.max(0, heading.offsetTop - 16);
+            requestAnimationFrame(() => {
+              scrollSyncLock.current = false;
+            });
+          }
+        }
+
+        if (editor) {
+          const lineIndex = findHeadingLineIndex(
+            draftRef.current.bodyMd,
+            item.text,
+          );
+          if (lineIndex >= 0) {
+            scrollTextareaToLine(editor, lineIndex);
+          }
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [editing, canEdit]);
+
+  useEffect(() => {
+    if (editing || !canEdit) {
+      setShowFloatingEdit(false);
+      return;
+    }
+
+    const target = topEditControlsRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setShowFloatingEdit(!(entry?.isIntersecting ?? true));
+      },
+      { rootMargin: "-48px 0px 0px 0px", threshold: 0 },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [editing, canEdit]);
+
   const loadVersions = useCallback(async () => {
     setVersionsLoading(true);
     try {
@@ -535,6 +713,7 @@ export function PostWithEditor({
 
       if (!current.title.trim() || !current.slug.trim()) {
         if (!autosave) {
+          setDetailsOpen(true);
           toast.add({
             title: "Title and slug are required",
             type: "error",
@@ -648,6 +827,19 @@ export function PostWithEditor({
     return () => window.clearInterval(timer);
   }, [editing, saveEdit]);
 
+  function togglePane(pane: keyof EditorPanes) {
+    setPaneOpen((current) => {
+      const nextOpen = !current[pane];
+      if (!nextOpen) {
+        const remaining = (
+          Object.keys(current) as (keyof EditorPanes)[]
+        ).filter((key) => (key === pane ? false : current[key]));
+        if (remaining.length === 0) return current;
+      }
+      return { ...current, [pane]: nextOpen };
+    });
+  }
+
   function startEdit() {
     const next = draftFromPost(post);
     setDraft(next);
@@ -657,7 +849,10 @@ export function PostWithEditor({
     const nextOutline = extractTocFromMarkdown(post.bodyMd);
     setOutline(nextOutline);
     setDirty(false);
+    setDetailsOpen(false);
+    setPaneOpen(ALL_PANES_OPEN);
     setMobileTab("write");
+    pendingEditJumpRef.current = getActiveReadHeading(nextOutline);
     setEditing(true);
     setEditQuery(true);
   }
@@ -665,6 +860,9 @@ export function PostWithEditor({
   function cancelEdit() {
     setEditing(false);
     setHistoryOpen(false);
+    setDetailsOpen(false);
+    setPaneOpen(ALL_PANES_OPEN);
+    pendingEditJumpRef.current = null;
     const next = draftFromPost(post);
     setDraft(next);
     lastSavedRef.current = next;
@@ -785,17 +983,39 @@ export function PostWithEditor({
 
     return (
       <div className="fixed inset-x-0 bottom-0 top-12 z-50 flex flex-col border-t border-border bg-background">
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-3 sm:px-5">
-          <p className="mr-auto font-[family-name:var(--font-display)] text-base tracking-tight">
-            Edit post
-            <span className="ml-2 text-xs font-normal text-muted-foreground">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2 sm:px-5">
+          <div className="mr-auto min-w-0">
+            <p className="truncate font-[family-name:var(--font-display)] text-base tracking-tight">
+              {draft.title.trim() || "Edit post"}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
               {saving
                 ? "Saving…"
                 : dirty
                   ? "Unsaved changes · autosaves every minute"
                   : "Up to date"}
-            </span>
-          </p>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((open) => !open)}
+            aria-expanded={detailsOpen}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs transition",
+              detailsOpen
+                ? "border-primary text-foreground"
+                : "border-border text-muted-foreground hover:border-primary hover:text-foreground",
+            )}
+          >
+            Details
+            <ChevronDown
+              className={cn(
+                "size-3.5 transition-transform",
+                detailsOpen ? "rotate-180" : "rotate-0",
+              )}
+              aria-hidden
+            />
+          </button>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -827,7 +1047,15 @@ export function PostWithEditor({
                   size="icon-sm"
                   aria-label="Version history"
                   aria-pressed={historyOpen}
-                  onClick={() => setHistoryOpen((open) => !open)}
+                  onClick={() => {
+                    setHistoryOpen((open) => {
+                      const next = !open;
+                      if (next) {
+                        setPaneOpen((panes) => ({ ...panes, index: true }));
+                      }
+                      return next;
+                    });
+                  }}
                 />
               }
             >
@@ -852,131 +1080,133 @@ export function PostWithEditor({
           </button>
         </div>
 
-        <div className="shrink-0 space-y-3 border-b border-border px-4 py-3 sm:px-5">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {detailsOpen ? (
+          <div className="shrink-0 space-y-3 border-b border-border px-4 py-3 sm:px-5">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="block text-xs text-muted-foreground">
+                Title
+                <input
+                  type="text"
+                  value={draft.title}
+                  onChange={(e) =>
+                    setDraft((current) => ({
+                      ...current,
+                      title: e.target.value,
+                    }))
+                  }
+                  className={`${fieldClass} mt-1`}
+                />
+              </label>
+              <label className="block text-xs text-muted-foreground">
+                Slug
+                <input
+                  type="text"
+                  value={draft.slug}
+                  onChange={(e) =>
+                    setDraft((current) => ({
+                      ...current,
+                      slug: e.target.value,
+                    }))
+                  }
+                  className={`${fieldClass} mt-1`}
+                />
+              </label>
+              <label className="block text-xs text-muted-foreground">
+                Tags
+                <input
+                  type="text"
+                  value={draft.tags}
+                  onChange={(e) =>
+                    setDraft((current) => ({
+                      ...current,
+                      tags: e.target.value,
+                    }))
+                  }
+                  placeholder="arrays, dp"
+                  className={`${fieldClass} mt-1`}
+                />
+              </label>
+              <label className="block text-xs text-muted-foreground">
+                Visibility
+                <select
+                  value={draft.visibility}
+                  onChange={(e) =>
+                    setDraft((current) => ({
+                      ...current,
+                      visibility: e.target.value as Visibility,
+                    }))
+                  }
+                  className={`${fieldClass} mt-1`}
+                >
+                  <option value="private">private</option>
+                  <option value="public">public</option>
+                </select>
+              </label>
+            </div>
             <label className="block text-xs text-muted-foreground">
-              Title
+              Excerpt
               <input
                 type="text"
-                value={draft.title}
+                value={draft.excerpt}
                 onChange={(e) =>
                   setDraft((current) => ({
                     ...current,
-                    title: e.target.value,
+                    excerpt: e.target.value,
                   }))
                 }
                 className={`${fieldClass} mt-1`}
               />
             </label>
-            <label className="block text-xs text-muted-foreground">
-              Slug
-              <input
-                type="text"
-                value={draft.slug}
-                onChange={(e) =>
-                  setDraft((current) => ({
-                    ...current,
-                    slug: e.target.value,
-                  }))
-                }
-                className={`${fieldClass} mt-1`}
-              />
-            </label>
-            <label className="block text-xs text-muted-foreground">
-              Tags
-              <input
-                type="text"
-                value={draft.tags}
-                onChange={(e) =>
-                  setDraft((current) => ({
-                    ...current,
-                    tags: e.target.value,
-                  }))
-                }
-                placeholder="arrays, dp"
-                className={`${fieldClass} mt-1`}
-              />
-            </label>
-            <label className="block text-xs text-muted-foreground">
-              Visibility
-              <select
-                value={draft.visibility}
-                onChange={(e) =>
-                  setDraft((current) => ({
-                    ...current,
-                    visibility: e.target.value as Visibility,
-                  }))
-                }
-                className={`${fieldClass} mt-1`}
-              >
-                <option value="private">private</option>
-                <option value="public">public</option>
-              </select>
-            </label>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="block text-xs text-muted-foreground">
+                Series slug
+                <input
+                  type="text"
+                  value={draft.seriesSlug}
+                  onChange={(e) =>
+                    setDraft((current) => ({
+                      ...current,
+                      seriesSlug: e.target.value,
+                    }))
+                  }
+                  placeholder="dp-patterns"
+                  className={`${fieldClass} mt-1`}
+                />
+              </label>
+              <label className="block text-xs text-muted-foreground">
+                Series title
+                <input
+                  type="text"
+                  value={draft.seriesTitle}
+                  onChange={(e) =>
+                    setDraft((current) => ({
+                      ...current,
+                      seriesTitle: e.target.value,
+                    }))
+                  }
+                  placeholder="DP Patterns"
+                  className={`${fieldClass} mt-1`}
+                />
+              </label>
+              <label className="block text-xs text-muted-foreground">
+                Series order
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={draft.seriesOrder}
+                  onChange={(e) =>
+                    setDraft((current) => ({
+                      ...current,
+                      seriesOrder: e.target.value,
+                    }))
+                  }
+                  placeholder="1"
+                  className={`${fieldClass} mt-1`}
+                />
+              </label>
+            </div>
           </div>
-          <label className="block text-xs text-muted-foreground">
-            Excerpt
-            <input
-              type="text"
-              value={draft.excerpt}
-              onChange={(e) =>
-                setDraft((current) => ({
-                  ...current,
-                  excerpt: e.target.value,
-                }))
-              }
-              className={`${fieldClass} mt-1`}
-            />
-          </label>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <label className="block text-xs text-muted-foreground">
-              Series slug
-              <input
-                type="text"
-                value={draft.seriesSlug}
-                onChange={(e) =>
-                  setDraft((current) => ({
-                    ...current,
-                    seriesSlug: e.target.value,
-                  }))
-                }
-                placeholder="dp-patterns"
-                className={`${fieldClass} mt-1`}
-              />
-            </label>
-            <label className="block text-xs text-muted-foreground">
-              Series title
-              <input
-                type="text"
-                value={draft.seriesTitle}
-                onChange={(e) =>
-                  setDraft((current) => ({
-                    ...current,
-                    seriesTitle: e.target.value,
-                  }))
-                }
-                placeholder="DP Patterns"
-                className={`${fieldClass} mt-1`}
-              />
-            </label>
-            <label className="block text-xs text-muted-foreground">
-              Series order
-              <input
-                type="text"
-                inputMode="numeric"
-                value={draft.seriesOrder}
-                onChange={(e) =>
-                  setDraft((current) => ({
-                    ...current,
-                    seriesOrder: e.target.value,
-                  }))
-                }
-                placeholder="1"
-                className={`${fieldClass} mt-1`}
-              />
-            </label>
-          </div>
-        </div>
+        ) : null}
 
         <div className="flex shrink-0 gap-1 border-b border-border px-4 py-2 md:hidden sm:px-5">
           <button
@@ -1020,20 +1250,29 @@ export function PostWithEditor({
           </button>
         </div>
 
-        <div
-          className={cn(
-            "grid min-h-0 flex-1 grid-cols-1 overflow-hidden",
-            historyOpen
-              ? "md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_17rem]"
-              : "md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_14rem]",
-          )}
-        >
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {!paneOpen.write ? (
+            <EditorPaneRail
+              label="Write"
+              edge="start"
+              onExpand={() => togglePane("write")}
+            />
+          ) : null}
           <div
             className={cn(
-              "min-h-0 min-w-0 border-border md:border-r",
-              mobileTab === "write" ? "flex" : "hidden md:flex",
+              "min-h-0 min-w-0 flex-col border-border md:border-r",
+              mobileTab === "write" ? "flex" : "hidden",
+              paneOpen.write ? "md:flex md:flex-1" : "md:hidden",
             )}
           >
+            <EditorPaneHeader
+              label="Write"
+              collapseEdge="start"
+              collapseDisabled={
+                paneOpen.write && !paneOpen.preview && !paneOpen.index
+              }
+              onCollapse={() => togglePane("write")}
+            />
             <MarkdownBodyTextarea
               revision={bodyRevision}
               initialBody={draft.bodyMd}
@@ -1044,135 +1283,181 @@ export function PostWithEditor({
               onScroll={handleEditorScroll}
             />
           </div>
+
+          {!paneOpen.preview ? (
+            <EditorPaneRail
+              label="Preview"
+              edge="start"
+              onExpand={() => togglePane("preview")}
+            />
+          ) : null}
           <div
-            ref={bindPreviewEl}
-            onScroll={handlePreviewScroll}
-            onClick={handlePreviewClick}
             className={cn(
-              "min-h-0 min-w-0 overflow-y-auto px-4 py-4 sm:px-5",
-              mobileTab === "preview" ? "block" : "hidden md:block",
+              "min-h-0 min-w-0 flex-col",
+              mobileTab === "preview" ? "flex" : "hidden",
+              paneOpen.preview ? "md:flex md:flex-[1.15]" : "md:hidden",
             )}
           >
-            {historyOpen && selectedVersion ? (
-              <>
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                      {selectedVersion.kind === "draft"
-                        ? "Draft preview"
-                        : "Version preview"}
-                    </p>
-                    <h2 className="mt-1 font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">
-                      {selectedVersion.title}
-                    </h2>
+            <EditorPaneHeader
+              label={historyOpen && selectedVersion ? "Version" : "Preview"}
+              collapseEdge="start"
+              collapseDisabled={
+                paneOpen.preview && !paneOpen.write && !paneOpen.index
+              }
+              onCollapse={() => togglePane("preview")}
+            />
+            <div
+              ref={bindPreviewEl}
+              onScroll={handlePreviewScroll}
+              onClick={handlePreviewClick}
+              className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5"
+            >
+              {historyOpen && selectedVersion ? (
+                <>
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                        {selectedVersion.kind === "draft"
+                          ? "Draft preview"
+                          : "Version preview"}
+                      </p>
+                      <h2 className="mt-1 font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">
+                        {selectedVersion.title}
+                      </h2>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={restoring}
+                      onClick={() => void restoreVersion(selectedVersion.id)}
+                      className="rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background disabled:opacity-60"
+                    >
+                      {restoring ? "Restoring…" : "Rollback"}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    disabled={restoring}
-                    onClick={() => void restoreVersion(selectedVersion.id)}
-                    className="rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background disabled:opacity-60"
-                  >
-                    {restoring ? "Restoring…" : "Rollback"}
-                  </button>
-                </div>
-                {selectedVersion.excerpt ? (
-                  <p className="mb-6 text-muted-foreground">
-                    {selectedVersion.excerpt}
+                  {selectedVersion.excerpt ? (
+                    <p className="mb-6 text-muted-foreground">
+                      {selectedVersion.excerpt}
+                    </p>
+                  ) : null}
+                  <pre className="whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-muted-foreground">
+                    {selectedVersion.bodyMd}
+                  </pre>
+                </>
+              ) : (
+                <>
+                  <h2 className="mb-4 font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">
+                    {draft.title.trim() || "Untitled"}
+                  </h2>
+                  {draft.excerpt.trim() ? (
+                    <p className="mb-6 text-muted-foreground">{draft.excerpt}</p>
+                  ) : null}
+                  <p className="mb-4 text-xs text-muted-foreground">
+                    Scroll syncs with the editor · click a heading to jump to it
                   </p>
-                ) : null}
-                <pre className="whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-muted-foreground">
-                  {selectedVersion.bodyMd}
-                </pre>
-              </>
-            ) : (
-              <>
-                <h2 className="mb-4 font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">
-                  {draft.title.trim() || "Untitled"}
-                </h2>
-                {draft.excerpt.trim() ? (
-                  <p className="mb-6 text-muted-foreground">{draft.excerpt}</p>
-                ) : null}
-                <p className="mb-4 text-xs text-muted-foreground">
-                  Scroll syncs with the editor · click a heading to jump to it
-                </p>
-                <ProseContent
-                  html={previewHtml}
-                  className="[&_h1]:cursor-pointer [&_h2]:cursor-pointer [&_h3]:cursor-pointer"
-                />
-              </>
-            )}
+                  <ProseContent
+                    html={previewHtml}
+                    className="[&_h1]:cursor-pointer [&_h2]:cursor-pointer [&_h3]:cursor-pointer"
+                  />
+                </>
+              )}
+            </div>
           </div>
+
+          {!paneOpen.index ? (
+            <EditorPaneRail
+              label={historyOpen ? "History" : "Index"}
+              edge="end"
+              onExpand={() => togglePane("index")}
+            />
+          ) : null}
           {historyOpen ? (
             <aside
               className={cn(
-                "min-h-0 min-w-0 overflow-y-auto border-t border-border md:border-l md:border-t-0",
-                mobileTab === "index" ? "block" : "hidden md:block",
+                "min-h-0 min-w-0 flex-col overflow-hidden border-t border-border md:border-l md:border-t-0",
+                mobileTab === "index" ? "flex" : "hidden",
+                paneOpen.index
+                  ? "md:flex md:w-[17rem] md:shrink-0"
+                  : "md:hidden",
               )}
             >
-              <div className="px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                  History
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Manual saves are kept. Autosave keeps one draft.
-                </p>
+              <EditorPaneHeader
+                label="History"
+                collapseEdge="end"
+                collapseDisabled={
+                  paneOpen.index && !paneOpen.write && !paneOpen.preview
+                }
+                onCollapse={() => togglePane("index")}
+              />
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <div className="px-4 py-3">
+                  <p className="text-xs text-muted-foreground">
+                    Manual saves are kept. Autosave keeps one draft.
+                  </p>
+                </div>
+                {versionsLoading ? (
+                  <p className="px-4 text-sm text-muted-foreground">Loading…</p>
+                ) : versions.length === 0 ? (
+                  <p className="px-4 text-sm text-muted-foreground">
+                    No versions yet. Save to create one.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {versions.map((version) => (
+                      <li key={version.id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedVersionId(version.id)}
+                          className={cn(
+                            "w-full px-4 py-3 text-left transition hover:bg-accent-soft/50",
+                            selectedVersionId === version.id
+                              ? "bg-accent-soft"
+                              : null,
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">
+                              {formatVersionTime(version.createdAt)}
+                            </span>
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide",
+                                version.kind === "draft"
+                                  ? "bg-code-bg text-muted-foreground"
+                                  : "bg-accent-soft text-primary",
+                              )}
+                            >
+                              {version.kind === "draft" ? "draft" : "saved"}
+                            </span>
+                          </div>
+                          <p className="mt-1 truncate text-xs text-muted-foreground">
+                            {version.title}
+                          </p>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              {versionsLoading ? (
-                <p className="px-4 text-sm text-muted-foreground">Loading…</p>
-              ) : versions.length === 0 ? (
-                <p className="px-4 text-sm text-muted-foreground">
-                  No versions yet. Save to create one.
-                </p>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {versions.map((version) => (
-                    <li key={version.id}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedVersionId(version.id)}
-                        className={cn(
-                          "w-full px-4 py-3 text-left transition hover:bg-accent-soft/50",
-                          selectedVersionId === version.id
-                            ? "bg-accent-soft"
-                            : null,
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">
-                            {formatVersionTime(version.createdAt)}
-                          </span>
-                          <span
-                            className={cn(
-                              "rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide",
-                              version.kind === "draft"
-                                ? "bg-code-bg text-muted-foreground"
-                                : "bg-accent-soft text-primary",
-                            )}
-                          >
-                            {version.kind === "draft" ? "draft" : "saved"}
-                          </span>
-                        </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {version.title}
-                        </p>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </aside>
           ) : (
             <aside
               className={cn(
-                "min-h-0 min-w-0 border-t border-border bg-background md:border-l md:border-t-0",
-                mobileTab === "index" ? "flex" : "hidden md:flex",
+                "min-h-0 min-w-0 flex-col border-t border-border bg-background md:border-l md:border-t-0",
+                mobileTab === "index" ? "flex" : "hidden",
+                paneOpen.index
+                  ? "md:flex md:w-56 md:shrink-0"
+                  : "md:hidden",
               )}
             >
               <EditorOutline
                 items={outline}
                 onSelect={jumpToOutlineItem}
                 scrollRoot={historyOpen ? null : previewEl}
-                className="h-full w-full"
+                onCollapse={() => togglePane("index")}
+                collapseDisabled={
+                  paneOpen.index && !paneOpen.write && !paneOpen.preview
+                }
+                className="h-full min-h-0 w-full"
               />
             </aside>
           )}
@@ -1197,7 +1482,7 @@ export function PostWithEditor({
             All posts
           </Link>
           {canEdit ? (
-            <div className="flex items-center gap-1">
+            <div ref={topEditControlsRef} className="flex items-center gap-1">
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -1335,6 +1620,50 @@ export function PostWithEditor({
             className="h-full min-h-0"
           />
         </aside>
+      ) : null}
+
+      {canEdit && showFloatingEdit ? (
+        <div className="fixed bottom-6 right-5 z-40 flex flex-col items-center gap-1 rounded-full border border-border bg-background/95 p-1 shadow-soft backdrop-blur-md sm:right-8">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="default"
+                  size="icon-sm"
+                  aria-label="Edit this section"
+                  onClick={startEdit}
+                  className="rounded-full"
+                />
+              }
+            >
+              <Pencil className="size-4" aria-hidden />
+            </TooltipTrigger>
+            <TooltipContent side="left">Edit this section</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={copied ? "Copied Markdown" : "Copy Markdown"}
+                  onClick={() => void copyMarkdown()}
+                />
+              }
+            >
+              {copied ? (
+                <Check className="size-4 text-primary" aria-hidden />
+              ) : (
+                <Copy className="size-4" aria-hidden />
+              )}
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              {copied ? "Copied" : "Copy MD"}
+            </TooltipContent>
+          </Tooltip>
+        </div>
       ) : null}
     </>
   );
