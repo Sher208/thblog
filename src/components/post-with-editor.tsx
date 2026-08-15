@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type MutableRefObject,
+  type RefObject,
+} from "react";
 import { ArrowLeft, Check, Columns2, Copy, History } from "lucide-react";
 import { EditorOutline } from "@/components/editor-outline";
 import { RelatedPosts, SeriesNav } from "@/components/post-relations";
@@ -76,7 +84,65 @@ type PostVersionItem = {
 };
 
 const AUTOSAVE_MS = 60 * 1000;
-const PREVIEW_DEBOUNCE_MS = 280;
+/** Wait until typing pauses before syncing React state + live preview. */
+const BODY_IDLE_MS = 500;
+
+/**
+ * Uncontrolled markdown body field. Typing updates a ref immediately and only
+ * notifies React after idle — keeps keystrokes off the heavy editor tree.
+ */
+function MarkdownBodyTextarea({
+  revision,
+  initialBody,
+  bodyRef,
+  textareaRef,
+  onBodyActivity,
+  onBodyIdle,
+  onScroll,
+}: {
+  revision: number;
+  initialBody: string;
+  bodyRef: MutableRefObject<string>;
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+  onBodyActivity: (bodyMd: string) => void;
+  onBodyIdle: (bodyMd: string) => void;
+  onScroll?: () => void;
+}) {
+  const initialBodyRef = useRef(initialBody);
+  initialBodyRef.current = initialBody;
+  const idleTimer = useRef(0);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.value = initialBodyRef.current;
+    bodyRef.current = initialBodyRef.current;
+  }, [revision, bodyRef, textareaRef]);
+
+  useEffect(() => {
+    return () => window.clearTimeout(idleTimer.current);
+  }, []);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      defaultValue={initialBody}
+      onChange={(e) => {
+        const value = e.target.value;
+        bodyRef.current = value;
+        onBodyActivity(value);
+        window.clearTimeout(idleTimer.current);
+        idleTimer.current = window.setTimeout(() => {
+          onBodyIdle(value);
+        }, BODY_IDLE_MS);
+      }}
+      onScroll={onScroll}
+      spellCheck={false}
+      aria-label="Markdown body"
+      className="h-full min-h-[50dvh] w-full resize-none bg-code-bg/40 px-4 py-4 font-mono text-[13px] leading-relaxed outline-none sm:px-5 md:min-h-0"
+    />
+  );
+}
 
 /** Scroll one pane to match another by percentage (avoids feedback loops via lock). */
 function syncScrollByRatio(
@@ -219,6 +285,7 @@ export function PostWithEditor({
   const [outline, setOutline] = useState<TocItem[]>(() =>
     extractTocFromMarkdown(post.bodyMd),
   );
+  const [bodyRevision, setBodyRevision] = useState(0);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -236,6 +303,7 @@ export function PostWithEditor({
   );
 
   const draftRef = useRef(draft);
+  const bodyMdRef = useRef(post.bodyMd);
   const lastSavedRef = useRef(draftFromPost(post));
   const savingRef = useRef(false);
   const previewRequestId = useRef(0);
@@ -245,8 +313,37 @@ export function PostWithEditor({
   const scrollSyncLock = useRef(false);
   const scrollRafId = useRef(0);
 
-  draftRef.current = draft;
+  // Body lives in bodyMdRef during typing; merge so save never sees a stale body.
+  draftRef.current = { ...draft, bodyMd: bodyMdRef.current };
   postIdRef.current = post.id;
+
+  function applyBodyFromOutside(bodyMd: string) {
+    bodyMdRef.current = bodyMd;
+    setBodyRevision((n) => n + 1);
+  }
+
+  function handleBodyActivity(bodyMd: string) {
+    draftRef.current = { ...draftRef.current, bodyMd };
+    // Skip React updates once dirty while the body still differs from saved.
+    setDirty((prev) => {
+      if (prev && bodyMd !== lastSavedRef.current.bodyMd) return prev;
+      const next = !draftsEqual(draftRef.current, lastSavedRef.current);
+      return prev === next ? prev : next;
+    });
+  }
+
+  function handleBodyIdle(bodyMd: string) {
+    setDraft((current) =>
+      current.bodyMd === bodyMd ? current : { ...current, bodyMd },
+    );
+    setOutline(extractTocFromMarkdown(bodyMd));
+    const requestId = ++previewRequestId.current;
+    void renderMarkdownPreview(bodyMd).then((html) => {
+      if (requestId === previewRequestId.current) {
+        setPreviewHtml(html);
+      }
+    });
+  }
 
   function bindPreviewEl(el: HTMLDivElement | null) {
     previewRef.current = el;
@@ -339,6 +436,7 @@ export function PostWithEditor({
       const next = draftFromPost(post);
       setDraft(next);
       lastSavedRef.current = next;
+      applyBodyFromOutside(next.bodyMd);
       setPreviewHtml(post.bodyHtml);
       const nextOutline = extractTocFromMarkdown(post.bodyMd);
       setOutline(nextOutline);
@@ -347,7 +445,12 @@ export function PostWithEditor({
   }, [post, editing]);
 
   useEffect(() => {
-    setDirty(!draftsEqual(draft, lastSavedRef.current));
+    setDirty(
+      !draftsEqual(
+        { ...draft, bodyMd: bodyMdRef.current },
+        lastSavedRef.current,
+      ),
+    );
   }, [draft]);
 
   function setEditQuery(enabled: boolean, slug = post.slug) {
@@ -359,23 +462,6 @@ export function PostWithEditor({
       scroll: false,
     });
   }
-
-  useEffect(() => {
-    if (!editing) return;
-
-    const handle = window.setTimeout(() => {
-      const requestId = ++previewRequestId.current;
-      const nextOutline = extractTocFromMarkdown(draft.bodyMd);
-      setOutline(nextOutline);
-      void renderMarkdownPreview(draft.bodyMd).then((html) => {
-        if (requestId === previewRequestId.current) {
-          setPreviewHtml(html);
-        }
-      });
-    }, PREVIEW_DEBOUNCE_MS);
-
-    return () => window.clearTimeout(handle);
-  }, [draft.bodyMd, editing]);
 
   function jumpToReadHeading(item: TocItem, behavior: ScrollBehavior = "smooth") {
     const heading = document.getElementById(item.id);
@@ -465,6 +551,11 @@ export function PostWithEditor({
 
       savingRef.current = true;
       setSaving(true);
+
+      // Flush any in-flight body edits into React state before persisting.
+      setDraft((d) =>
+        d.bodyMd === current.bodyMd ? d : { ...d, bodyMd: current.bodyMd },
+      );
 
       const nextSlug = current.slug.trim();
       const res = await fetch("/api/posts", {
@@ -561,6 +652,7 @@ export function PostWithEditor({
     const next = draftFromPost(post);
     setDraft(next);
     lastSavedRef.current = next;
+    applyBodyFromOutside(next.bodyMd);
     setPreviewHtml(post.bodyHtml);
     const nextOutline = extractTocFromMarkdown(post.bodyMd);
     setOutline(nextOutline);
@@ -576,6 +668,7 @@ export function PostWithEditor({
     const next = draftFromPost(post);
     setDraft(next);
     lastSavedRef.current = next;
+    applyBodyFromOutside(next.bodyMd);
     setPreviewHtml(post.bodyHtml);
     const nextOutline = extractTocFromMarkdown(post.bodyMd);
     setOutline(nextOutline);
@@ -640,6 +733,7 @@ export function PostWithEditor({
     };
     setDraft(nextDraft);
     lastSavedRef.current = nextDraft;
+    applyBodyFromOutside(nextDraft.bodyMd);
     setDirty(false);
     setPreviewHtml(data.post.bodyHtml);
     const nextOutline = extractTocFromMarkdown(data.post.bodyMd);
@@ -662,16 +756,17 @@ export function PostWithEditor({
   }
 
   async function copyMarkdown() {
+    const current = draftRef.current;
     const source = serializePostToMarkdown({
-      title: draft.title.trim() || post.title,
-      slug: draft.slug.trim() || post.slug,
-      excerpt: draft.excerpt,
-      visibility: draft.visibility,
-      tags: parseTagsInput(draft.tags),
-      seriesSlug: draft.seriesSlug.trim() || null,
-      seriesTitle: draft.seriesTitle.trim() || null,
-      seriesOrder: parseSeriesOrder(draft.seriesOrder),
-      bodyMd: draft.bodyMd,
+      title: current.title.trim() || post.title,
+      slug: current.slug.trim() || post.slug,
+      excerpt: current.excerpt,
+      visibility: current.visibility,
+      tags: parseTagsInput(current.tags),
+      seriesSlug: current.seriesSlug.trim() || null,
+      seriesTitle: current.seriesTitle.trim() || null,
+      seriesOrder: parseSeriesOrder(current.seriesOrder),
+      bodyMd: current.bodyMd,
     });
 
     try {
@@ -765,7 +860,10 @@ export function PostWithEditor({
                 type="text"
                 value={draft.title}
                 onChange={(e) =>
-                  setDraft({ ...draft, title: e.target.value })
+                  setDraft((current) => ({
+                    ...current,
+                    title: e.target.value,
+                  }))
                 }
                 className={`${fieldClass} mt-1`}
               />
@@ -775,7 +873,12 @@ export function PostWithEditor({
               <input
                 type="text"
                 value={draft.slug}
-                onChange={(e) => setDraft({ ...draft, slug: e.target.value })}
+                onChange={(e) =>
+                  setDraft((current) => ({
+                    ...current,
+                    slug: e.target.value,
+                  }))
+                }
                 className={`${fieldClass} mt-1`}
               />
             </label>
@@ -784,7 +887,12 @@ export function PostWithEditor({
               <input
                 type="text"
                 value={draft.tags}
-                onChange={(e) => setDraft({ ...draft, tags: e.target.value })}
+                onChange={(e) =>
+                  setDraft((current) => ({
+                    ...current,
+                    tags: e.target.value,
+                  }))
+                }
                 placeholder="arrays, dp"
                 className={`${fieldClass} mt-1`}
               />
@@ -794,10 +902,10 @@ export function PostWithEditor({
               <select
                 value={draft.visibility}
                 onChange={(e) =>
-                  setDraft({
-                    ...draft,
+                  setDraft((current) => ({
+                    ...current,
                     visibility: e.target.value as Visibility,
-                  })
+                  }))
                 }
                 className={`${fieldClass} mt-1`}
               >
@@ -812,7 +920,10 @@ export function PostWithEditor({
               type="text"
               value={draft.excerpt}
               onChange={(e) =>
-                setDraft({ ...draft, excerpt: e.target.value })
+                setDraft((current) => ({
+                  ...current,
+                  excerpt: e.target.value,
+                }))
               }
               className={`${fieldClass} mt-1`}
             />
@@ -824,7 +935,10 @@ export function PostWithEditor({
                 type="text"
                 value={draft.seriesSlug}
                 onChange={(e) =>
-                  setDraft({ ...draft, seriesSlug: e.target.value })
+                  setDraft((current) => ({
+                    ...current,
+                    seriesSlug: e.target.value,
+                  }))
                 }
                 placeholder="dp-patterns"
                 className={`${fieldClass} mt-1`}
@@ -836,7 +950,10 @@ export function PostWithEditor({
                 type="text"
                 value={draft.seriesTitle}
                 onChange={(e) =>
-                  setDraft({ ...draft, seriesTitle: e.target.value })
+                  setDraft((current) => ({
+                    ...current,
+                    seriesTitle: e.target.value,
+                  }))
                 }
                 placeholder="DP Patterns"
                 className={`${fieldClass} mt-1`}
@@ -849,7 +966,10 @@ export function PostWithEditor({
                 inputMode="numeric"
                 value={draft.seriesOrder}
                 onChange={(e) =>
-                  setDraft({ ...draft, seriesOrder: e.target.value })
+                  setDraft((current) => ({
+                    ...current,
+                    seriesOrder: e.target.value,
+                  }))
                 }
                 placeholder="1"
                 className={`${fieldClass} mt-1`}
@@ -914,16 +1034,14 @@ export function PostWithEditor({
               mobileTab === "write" ? "flex" : "hidden md:flex",
             )}
           >
-            <textarea
-              ref={editorRef}
-              value={draft.bodyMd}
-              onChange={(e) =>
-                setDraft({ ...draft, bodyMd: e.target.value })
-              }
+            <MarkdownBodyTextarea
+              revision={bodyRevision}
+              initialBody={draft.bodyMd}
+              bodyRef={bodyMdRef}
+              textareaRef={editorRef}
+              onBodyActivity={handleBodyActivity}
+              onBodyIdle={handleBodyIdle}
               onScroll={handleEditorScroll}
-              spellCheck={false}
-              aria-label="Markdown body"
-              className="h-full min-h-[50dvh] w-full resize-none bg-code-bg/40 px-4 py-4 font-mono text-[13px] leading-relaxed outline-none sm:px-5 md:min-h-0"
             />
           </div>
           <div
