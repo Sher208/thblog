@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { Bookmark, BookmarkCheck } from "lucide-react";
 import type { TocItem } from "@/lib/toc";
 import { cn } from "@/lib/utils";
 
@@ -10,11 +11,20 @@ export function EditorOutline({
   className,
   /** When set, tracks the active heading while scrolling (window or a container). */
   scrollRoot = null,
+  /** Heading id currently bookmarked for this post (null = none). */
+  bookmarkedId = null,
+  /** Called when the user toggles a section bookmark. Omit to hide bookmark controls. */
+  onToggleBookmark,
+  /** Jump to the current bookmark. Shown as a header icon when bookmarks are enabled. */
+  onJumpToBookmark,
 }: {
   items: TocItem[];
   onSelect: (item: TocItem) => void;
   className?: string;
   scrollRoot?: "window" | HTMLElement | null;
+  bookmarkedId?: string | null;
+  onToggleBookmark?: (item: TocItem) => void;
+  onJumpToBookmark?: () => void;
 }) {
   const [activeId, setActiveId] = useState<string | null>(
     () => items[0]?.id ?? null,
@@ -23,6 +33,8 @@ export function EditorOutline({
   const activeRef = useRef<HTMLButtonElement>(null);
   const rafId = useRef(0);
   const ignoreScrollUntil = useRef(0);
+  const bookmarksEnabled = typeof onToggleBookmark === "function";
+  const hasBookmark = Boolean(bookmarkedId);
 
   useEffect(() => {
     if (!scrollRoot || items.length === 0) return;
@@ -154,15 +166,41 @@ export function EditorOutline({
     }, 480);
   }
 
+  function handleToggleBookmark(
+    item: TocItem,
+    event: MouseEvent<HTMLButtonElement>,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    onToggleBookmark?.(item);
+  }
+
   return (
     <nav
       aria-label="Section index"
       className={cn("flex min-h-0 flex-col", className)}
     >
-      <div className="shrink-0 border-b border-border px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3">
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           Index
         </p>
+        {bookmarksEnabled ? (
+          <button
+            type="button"
+            onClick={() => onJumpToBookmark?.()}
+            disabled={!hasBookmark}
+            aria-label="Jump to bookmark"
+            title={hasBookmark ? "Jump to bookmark" : "No bookmark set"}
+            className={cn(
+              "inline-flex size-6 items-center justify-center rounded-md transition-colors",
+              hasBookmark
+                ? "text-primary hover:bg-accent-soft"
+                : "cursor-not-allowed text-muted-foreground/35",
+            )}
+          >
+            <BookmarkCheck className="size-3.5" strokeWidth={2.25} aria-hidden />
+          </button>
+        ) : null}
       </div>
       {items.length === 0 ? (
         <p className="px-4 py-4 text-sm text-muted-foreground">
@@ -172,24 +210,56 @@ export function EditorOutline({
         <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
           {items.map((item) => {
             const active = item.id === activeId;
+            const bookmarked = bookmarksEnabled && item.id === bookmarkedId;
             return (
               <li key={`${item.id}-${item.level}-${item.text}`}>
-                <button
-                  type="button"
-                  ref={active ? activeRef : undefined}
-                  onClick={(event) => handleSelect(item, event)}
+                <div
                   className={cn(
-                    "w-full rounded-md border-l-2 px-2.5 py-1.5 text-left text-sm",
-                    item.level <= 1 && "font-semibold",
-                    item.level === 2 && "font-medium",
-                    item.level >= 3 && "pl-5 text-[13px]",
+                    "flex items-stretch rounded-md border-l-2",
                     active
                       ? "border-primary bg-accent-soft text-foreground"
                       : "border-transparent text-muted-foreground hover:bg-accent-soft/50 hover:text-foreground",
                   )}
                 >
-                  <span className="line-clamp-2">{item.text}</span>
-                </button>
+                  <button
+                    type="button"
+                    ref={active ? activeRef : undefined}
+                    onClick={(event) => handleSelect(item, event)}
+                    className={cn(
+                      "min-w-0 flex-1 px-2.5 py-1.5 text-left text-sm",
+                      item.level <= 1 && "font-semibold",
+                      item.level === 2 && "font-medium",
+                      item.level >= 3 && "pl-5 text-[13px]",
+                    )}
+                  >
+                    <span className="line-clamp-2">{item.text}</span>
+                  </button>
+                  {bookmarksEnabled ? (
+                    <button
+                      type="button"
+                      onClick={(event) => handleToggleBookmark(item, event)}
+                      aria-label={
+                        bookmarked
+                          ? `Remove bookmark from ${item.text}`
+                          : `Bookmark ${item.text}`
+                      }
+                      aria-pressed={bookmarked}
+                      className={cn(
+                        "shrink-0 px-2 transition-colors hover:text-foreground",
+                        bookmarked
+                          ? "text-primary"
+                          : "text-muted-foreground/55 hover:text-muted-foreground",
+                      )}
+                    >
+                      <Bookmark
+                        className="size-3.5"
+                        strokeWidth={2.25}
+                        fill={bookmarked ? "currentColor" : "none"}
+                        aria-hidden
+                      />
+                    </button>
+                  ) : null}
+                </div>
               </li>
             );
           })}

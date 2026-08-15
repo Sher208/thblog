@@ -16,6 +16,11 @@ import {
 } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/toast";
 import type { Visibility } from "@/lib/db/schema";
+import {
+  clearSectionBookmark,
+  getSectionBookmark,
+  setSectionBookmark,
+} from "@/lib/section-bookmark";
 import { extractTocFromMarkdown, type TocItem } from "@/lib/toc";
 import { renderMarkdownPreview } from "@/lib/markdown-preview";
 import { serializePostToMarkdown } from "@/lib/serialize-post-markdown";
@@ -191,6 +196,9 @@ export function PostWithEditor({
   );
   const [restoring, setRestoring] = useState(false);
   const [previewEl, setPreviewEl] = useState<HTMLDivElement | null>(null);
+  const [bookmarkedHeadingId, setBookmarkedHeadingId] = useState<string | null>(
+    null,
+  );
 
   const draftRef = useRef(draft);
   const lastSavedRef = useRef(draftFromPost(post));
@@ -334,13 +342,33 @@ export function PostWithEditor({
     return () => window.clearTimeout(handle);
   }, [draft.bodyMd, editing]);
 
-  function jumpToReadHeading(item: TocItem) {
+  function jumpToReadHeading(item: TocItem, behavior: ScrollBehavior = "smooth") {
     const heading = document.getElementById(item.id);
     if (!heading) return;
     const top = window.scrollY + heading.getBoundingClientRect().top - 80;
-    window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    window.scrollTo({ top: Math.max(0, top), behavior });
     window.history.replaceState(null, "", `#${item.id}`);
   }
+
+  function toggleSectionBookmark(item: TocItem) {
+    if (bookmarkedHeadingId === item.id) {
+      clearSectionBookmark(post.slug);
+      setBookmarkedHeadingId(null);
+      return;
+    }
+    setSectionBookmark(post.slug, item.id);
+    setBookmarkedHeadingId(item.id);
+  }
+
+  function jumpToBookmark() {
+    if (!bookmarkedHeadingId) return;
+    jumpToReadHeading({ id: bookmarkedHeadingId, text: "", level: 1 });
+  }
+
+  useEffect(() => {
+    if (editing) return;
+    setBookmarkedHeadingId(getSectionBookmark(post.slug));
+  }, [editing, post.slug]);
 
   const loadVersions = useCallback(async () => {
     setVersionsLoading(true);
@@ -1057,6 +1085,9 @@ export function PostWithEditor({
               items={outline}
               onSelect={jumpToReadHeading}
               scrollRoot="window"
+              bookmarkedId={bookmarkedHeadingId}
+              onToggleBookmark={toggleSectionBookmark}
+              onJumpToBookmark={jumpToBookmark}
             />
           </div>
         ) : null}
@@ -1076,6 +1107,9 @@ export function PostWithEditor({
             items={outline}
             onSelect={jumpToReadHeading}
             scrollRoot="window"
+            bookmarkedId={bookmarkedHeadingId}
+            onToggleBookmark={toggleSectionBookmark}
+            onJumpToBookmark={jumpToBookmark}
             className="h-full min-h-0"
           />
         </aside>
