@@ -21,6 +21,9 @@ export type ParsedMarkdown = {
   tags: string[];
   bodyMd: string;
   publishedAt: Date | null;
+  seriesSlug: string | null;
+  seriesTitle: string | null;
+  seriesOrder: number | null;
 };
 
 function slugify(value: string): string {
@@ -32,8 +35,80 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+function titleFromSlug(slug: string): string {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function toVisibility(value: unknown): Visibility {
   return value === "public" ? "public" : "private";
+}
+
+function parseSeries(data: Record<string, unknown>): {
+  seriesSlug: string | null;
+  seriesTitle: string | null;
+  seriesOrder: number | null;
+} {
+  let seriesSlug: string | null = null;
+  let seriesTitle: string | null = null;
+  let seriesOrder: number | null = null;
+
+  if (typeof data.series === "string" && data.series.trim()) {
+    seriesSlug = slugify(data.series);
+    seriesTitle = titleFromSlug(seriesSlug);
+  } else if (data.series && typeof data.series === "object") {
+    const series = data.series as Record<string, unknown>;
+    const slugSource =
+      typeof series.slug === "string"
+        ? series.slug
+        : typeof series.name === "string"
+          ? series.name
+          : typeof series.title === "string"
+            ? series.title
+            : "";
+    if (slugSource.trim()) {
+      seriesSlug = slugify(slugSource);
+      seriesTitle =
+        typeof series.title === "string" && series.title.trim()
+          ? series.title.trim()
+          : typeof series.name === "string" && series.name.trim()
+            ? series.name.trim()
+            : titleFromSlug(seriesSlug);
+      if (typeof series.order === "number" && Number.isFinite(series.order)) {
+        seriesOrder = series.order;
+      } else if (typeof series.order === "string" && series.order.trim()) {
+        const parsed = Number(series.order);
+        if (Number.isFinite(parsed)) seriesOrder = parsed;
+      }
+    }
+  }
+
+  if (typeof data.seriesSlug === "string" && data.seriesSlug.trim()) {
+    seriesSlug = slugify(data.seriesSlug);
+  }
+  if (typeof data.seriesTitle === "string" && data.seriesTitle.trim()) {
+    seriesTitle = data.seriesTitle.trim();
+  }
+
+  const orderRaw = data.seriesOrder ?? data.order;
+  if (typeof orderRaw === "number" && Number.isFinite(orderRaw)) {
+    seriesOrder = orderRaw;
+  } else if (typeof orderRaw === "string" && orderRaw.trim()) {
+    const parsed = Number(orderRaw);
+    if (Number.isFinite(parsed)) seriesOrder = parsed;
+  }
+
+  if (seriesSlug && !seriesTitle) {
+    seriesTitle = titleFromSlug(seriesSlug);
+  }
+  if (!seriesSlug) {
+    return { seriesSlug: null, seriesTitle: null, seriesOrder: null };
+  }
+
+  return { seriesSlug, seriesTitle, seriesOrder };
 }
 
 export function parseMarkdownFile(
@@ -71,6 +146,8 @@ export function parseMarkdownFile(
     }
   }
 
+  const series = parseSeries(data as Record<string, unknown>);
+
   return {
     title,
     slug: slugify(slugSource),
@@ -84,6 +161,7 @@ export function parseMarkdownFile(
     tags,
     bodyMd: content.trim(),
     publishedAt,
+    ...series,
   };
 }
 

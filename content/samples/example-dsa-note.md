@@ -4,6 +4,9 @@ slug: example-dsa-note
 tags: [arrays]
 excerpt: Example Markdown file you can upload from Admin.
 visibility: private
+series: array-patterns
+seriesTitle: Array Patterns
+seriesOrder: 4
 ---
 
 ## Pattern

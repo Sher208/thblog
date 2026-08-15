@@ -322,6 +322,78 @@ a {
   padding: 0;
 }
 
+.prose-blog [data-rehype-pretty-code-figure],
+.prose-blog pre.code-block-host {
+  position: relative;
+}
+
+.prose-blog [data-rehype-pretty-code-figure] pre {
+  margin: 0;
+}
+
+.prose-blog .code-block-toolbar {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  pointer-events: none;
+}
+
+.prose-blog .code-block-toolbar > * {
+  pointer-events: auto;
+}
+
+.prose-blog .code-block-lang {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  color: var(--muted-foreground);
+  user-select: none;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.35rem;
+  background: color-mix(in srgb, var(--background) 82%, transparent);
+  border: 1px solid var(--border);
+}
+
+.prose-blog .code-block-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--background);
+  color: var(--foreground);
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+
+.prose-blog .code-block-copy:hover {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  background: var(--background-elevated);
+}
+
+.prose-blog .code-block-copy[data-copied="true"] {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
+}
+
+.prose-blog [data-rehype-pretty-code-figure] pre,
+.prose-blog pre.code-block-host {
+  padding-top: 2.6rem;
+  padding-right: 1.1rem;
+}
+
 /* Dual-theme Shiki tokens from rehype-pretty-code.
    Avoid attribute selectors with a space value — cssnano crashes on them. */
 .prose-blog [data-rehype-pretty-code-figure] code,

@@ -20,6 +20,9 @@ export function serializePostToMarkdown(post: {
   visibility: Visibility;
   tags: string[];
   bodyMd: string;
+  seriesSlug?: string | null;
+  seriesTitle?: string | null;
+  seriesOrder?: number | null;
 }): string {
   const tagsLine =
     post.tags.length === 0
@@ -33,9 +36,22 @@ export function serializePostToMarkdown(post: {
     `tags: ${tagsLine}`,
     `excerpt: ${yamlScalar(post.excerpt)}`,
     `visibility: ${post.visibility}`,
-    "---",
-  ].join("\n");
+  ];
+
+  if (post.seriesSlug) {
+    frontmatter.push(`series: ${yamlScalar(post.seriesSlug)}`);
+    if (post.seriesTitle) {
+      frontmatter.push(`seriesTitle: ${yamlScalar(post.seriesTitle)}`);
+    }
+    if (post.seriesOrder != null) {
+      frontmatter.push(`seriesOrder: ${post.seriesOrder}`);
+    }
+  }
+
+  frontmatter.push("---");
 
   const body = post.bodyMd.trim();
-  return body ? `${frontmatter}\n\n${body}\n` : `${frontmatter}\n`;
+  return body
+    ? `${frontmatter.join("\n")}\n\n${body}\n`
+    : `${frontmatter.join("\n")}\n`;
 }

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { ArrowLeft, Check, Columns2, Copy, History } from "lucide-react";
 import { EditorOutline } from "@/components/editor-outline";
+import { RelatedPosts, SeriesNav } from "@/components/post-relations";
 import { ReadingProgress } from "@/components/reading-progress";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/toast";
 import type { Visibility } from "@/lib/db/schema";
+import type { PostWithTags } from "@/lib/posts";
 import {
   clearSectionBookmark,
   getSectionBookmark,
@@ -24,6 +26,7 @@ import {
 import { extractTocFromMarkdown, type TocItem } from "@/lib/toc";
 import { renderMarkdownPreview } from "@/lib/markdown-preview";
 import { serializePostToMarkdown } from "@/lib/serialize-post-markdown";
+import { ProseContent } from "@/components/prose-content";
 import { cn } from "@/lib/utils";
 
 export type EditablePost = {
@@ -36,6 +39,12 @@ export type EditablePost = {
   visibility: Visibility;
   publishedLabel: string;
   publishedDateTime?: string;
+  readingLabel: string;
+  series: {
+    slug: string;
+    title: string;
+    order: number | null;
+  } | null;
   tags: { id: string; name: string; slug: string }[];
   toc: TocItem[];
 };
@@ -46,6 +55,9 @@ type Draft = {
   excerpt: string;
   tags: string;
   visibility: Visibility;
+  seriesSlug: string;
+  seriesTitle: string;
+  seriesOrder: string;
   bodyMd: string;
 };
 
@@ -131,6 +143,10 @@ function draftFromPost(post: EditablePost): Draft {
     excerpt: post.excerpt,
     tags: post.tags.map((t) => t.name).join(", "),
     visibility: post.visibility,
+    seriesSlug: post.series?.slug ?? "",
+    seriesTitle: post.series?.title ?? "",
+    seriesOrder:
+      post.series?.order != null ? String(post.series.order) : "",
     bodyMd: post.bodyMd,
   };
 }
@@ -142,6 +158,13 @@ function parseTagsInput(value: string): string[] {
     .filter(Boolean);
 }
 
+function parseSeriesOrder(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function draftsEqual(a: Draft, b: Draft): boolean {
   return (
     a.title === b.title &&
@@ -149,6 +172,9 @@ function draftsEqual(a: Draft, b: Draft): boolean {
     a.excerpt === b.excerpt &&
     a.tags === b.tags &&
     a.visibility === b.visibility &&
+    a.seriesSlug === b.seriesSlug &&
+    a.seriesTitle === b.seriesTitle &&
+    a.seriesOrder === b.seriesOrder &&
     a.bodyMd === b.bodyMd
   );
 }
@@ -170,9 +196,18 @@ const fieldClass =
 export function PostWithEditor({
   post,
   canEdit,
+  seriesNav,
+  relatedPosts,
 }: {
   post: EditablePost;
   canEdit: boolean;
+  seriesNav?: {
+    previous: Pick<PostWithTags, "slug" | "title"> | null;
+    next: Pick<PostWithTags, "slug" | "title"> | null;
+    index: number;
+    total: number;
+  } | null;
+  relatedPosts?: PostWithTags[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -442,6 +477,9 @@ export function PostWithEditor({
           excerpt: current.excerpt,
           visibility: current.visibility,
           tags: parseTagsInput(current.tags),
+          seriesSlug: current.seriesSlug.trim() || null,
+          seriesTitle: current.seriesTitle.trim() || null,
+          seriesOrder: parseSeriesOrder(current.seriesOrder),
           bodyMd: current.bodyMd,
           version: autosave ? "draft" : "manual",
         }),
@@ -594,6 +632,10 @@ export function PostWithEditor({
       excerpt: data.post.excerpt,
       tags: data.post.tags.map((tag) => tag.name).join(", "),
       visibility: data.post.visibility,
+      seriesSlug: data.post.series?.slug ?? "",
+      seriesTitle: data.post.series?.title ?? "",
+      seriesOrder:
+        data.post.series?.order != null ? String(data.post.series.order) : "",
       bodyMd: data.post.bodyMd,
     };
     setDraft(nextDraft);
@@ -626,6 +668,9 @@ export function PostWithEditor({
       excerpt: draft.excerpt,
       visibility: draft.visibility,
       tags: parseTagsInput(draft.tags),
+      seriesSlug: draft.seriesSlug.trim() || null,
+      seriesTitle: draft.seriesTitle.trim() || null,
+      seriesOrder: parseSeriesOrder(draft.seriesOrder),
       bodyMd: draft.bodyMd,
     });
 
@@ -772,6 +817,45 @@ export function PostWithEditor({
               className={`${fieldClass} mt-1`}
             />
           </label>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="block text-xs text-muted-foreground">
+              Series slug
+              <input
+                type="text"
+                value={draft.seriesSlug}
+                onChange={(e) =>
+                  setDraft({ ...draft, seriesSlug: e.target.value })
+                }
+                placeholder="dp-patterns"
+                className={`${fieldClass} mt-1`}
+              />
+            </label>
+            <label className="block text-xs text-muted-foreground">
+              Series title
+              <input
+                type="text"
+                value={draft.seriesTitle}
+                onChange={(e) =>
+                  setDraft({ ...draft, seriesTitle: e.target.value })
+                }
+                placeholder="DP Patterns"
+                className={`${fieldClass} mt-1`}
+              />
+            </label>
+            <label className="block text-xs text-muted-foreground">
+              Series order
+              <input
+                type="text"
+                inputMode="numeric"
+                value={draft.seriesOrder}
+                onChange={(e) =>
+                  setDraft({ ...draft, seriesOrder: e.target.value })
+                }
+                placeholder="1"
+                className={`${fieldClass} mt-1`}
+              />
+            </label>
+          </div>
         </div>
 
         <div className="flex shrink-0 gap-1 border-b border-border px-4 py-2 md:hidden sm:px-5">
@@ -893,9 +977,9 @@ export function PostWithEditor({
                 <p className="mb-4 text-xs text-muted-foreground">
                   Scroll syncs with the editor · click a heading to jump to it
                 </p>
-                <div
-                  className="prose-blog [&_h1]:cursor-pointer [&_h2]:cursor-pointer [&_h3]:cursor-pointer"
-                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                <ProseContent
+                  html={previewHtml}
+                  className="[&_h1]:cursor-pointer [&_h2]:cursor-pointer [&_h3]:cursor-pointer"
                 />
               </>
             )}
@@ -1054,6 +1138,17 @@ export function PostWithEditor({
                 {post.publishedLabel}
               </time>
             ) : null}
+            {post.readingLabel ? <span>{post.readingLabel}</span> : null}
+            {post.series ? (
+              <Badge
+                variant="outline"
+                render={<Link href={`/series/${post.series.slug}`} />}
+                className="no-underline"
+              >
+                {post.series.title}
+                {post.series.order != null ? ` · Part ${post.series.order}` : ""}
+              </Badge>
+            ) : null}
             {post.tags.length ? (
               <ul className="flex flex-wrap gap-2">
                 {post.tags.map((tag) => (
@@ -1092,10 +1187,19 @@ export function PostWithEditor({
           </div>
         ) : null}
 
-        <div
-          className="prose-blog"
-          dangerouslySetInnerHTML={{ __html: post.bodyHtml }}
-        />
+        <ProseContent html={post.bodyHtml} />
+
+        {post.series && seriesNav ? (
+          <SeriesNav
+            seriesTitle={post.series.title}
+            seriesSlug={post.series.slug}
+            previous={seriesNav.previous}
+            next={seriesNav.next}
+            index={seriesNav.index}
+            total={seriesNav.total}
+          />
+        ) : null}
+        {relatedPosts?.length ? <RelatedPosts posts={relatedPosts} /> : null}
       </article>
 
       {outline.length > 0 ? (

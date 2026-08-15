@@ -27,6 +27,9 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+  ),
   title: {
     default: "thblog",
     template: "%s · thblog",
@@ -40,6 +43,17 @@ export const metadata: Metadata = {
   },
   formatDetection: {
     telephone: false,
+  },
+  openGraph: {
+    type: "website",
+    siteName: "thblog",
+    title: "thblog",
+    description: "A fast, mobile-first personal blog.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "thblog",
+    description: "A fast, mobile-first personal blog.",
   },
 };
 

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { cache } from "react";
 import { db } from "./db";
 import {
@@ -16,6 +16,7 @@ import {
   type ParsedMarkdown,
   type TocItem,
 } from "./markdown";
+import { estimateReadingMinutes } from "./reading-time";
 
 function slugifyTag(name: string): string {
   return name
@@ -26,6 +27,12 @@ function slugifyTag(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+export type PostSeries = {
+  slug: string;
+  title: string;
+  order: number | null;
+};
+
 export type PostWithTags = {
   id: string;
   slug: string;
@@ -35,10 +42,29 @@ export type PostWithTags = {
   bodyHtml: string;
   toc: TocItem[];
   visibility: Visibility;
+  series: PostSeries | null;
+  readingMinutes: number;
   publishedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   tags: { id: string; name: string; slug: string }[];
+};
+
+export type SearchResult = {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  readingMinutes: number;
+  seriesTitle: string | null;
+  tags: { id: string; name: string; slug: string }[];
+  score: number;
+};
+
+export type SeriesSummary = {
+  slug: string;
+  title: string;
+  count: number;
 };
 
 async function ensureTags(tagNames: string[]) {
@@ -96,6 +122,20 @@ function mapPost(
     toc = [];
   }
 
+  const series = post.seriesSlug
+    ? {
+        slug: post.seriesSlug,
+        title:
+          post.seriesTitle ||
+          post.seriesSlug
+            .split("-")
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(" "),
+        order: post.seriesOrder,
+      }
+    : null;
+
   return {
     id: post.id,
     slug: post.slug,
@@ -105,6 +145,8 @@ function mapPost(
     bodyHtml: post.bodyHtml,
     toc,
     visibility: post.visibility,
+    series,
+    readingMinutes: estimateReadingMinutes(post.bodyMd),
     publishedAt: post.publishedAt,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
@@ -220,6 +262,215 @@ export async function listPublicTags() {
   }
 
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function scoreSearchMatch(
+  query: string,
+  post: PostWithTags,
+): number {
+  const q = query.toLowerCase().trim();
+  if (!q) return 0;
+
+  const terms = q.split(/\s+/).filter(Boolean);
+  let score = 0;
+
+  const title = post.title.toLowerCase();
+  const excerpt = post.excerpt.toLowerCase();
+  const body = post.bodyMd.toLowerCase();
+  const tagText = post.tags.map((tag) => tag.name.toLowerCase()).join(" ");
+  const seriesText = [
+    post.series?.title ?? "",
+    post.series?.slug ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  for (const term of terms) {
+    if (title === term) score += 120;
+    else if (title.includes(term)) score += 80;
+    if (tagText.includes(term)) score += 50;
+    if (seriesText.includes(term)) score += 40;
+    if (excerpt.includes(term)) score += 30;
+    if (body.includes(term)) score += 10;
+  }
+
+  if (title.includes(q)) score += 40;
+  return score;
+}
+
+export async function searchPosts(
+  query: string,
+  options?: { includePrivate?: boolean; limit?: number },
+): Promise<SearchResult[]> {
+  const q = query.trim();
+  if (!q) return [];
+
+  const limit = options?.limit ?? 20;
+  const rows = options?.includePrivate
+    ? await listAllPosts()
+    : await listPublicPosts();
+
+  return rows
+    .map((post) => ({
+      id: post.id,
+      slug: post.slug,
+      title: post.title,
+      excerpt: post.excerpt,
+      readingMinutes: post.readingMinutes,
+      seriesTitle: post.series?.title ?? null,
+      tags: post.tags,
+      score: scoreSearchMatch(q, post),
+    }))
+    .filter((result) => result.score > 0)
+    .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))
+    .slice(0, limit);
+}
+
+export async function listPublicSeries(): Promise<SeriesSummary[]> {
+  const rows = await db.query.posts.findMany({
+    where: and(eq(posts.visibility, "public"), isNotNull(posts.seriesSlug)),
+    columns: {
+      seriesSlug: true,
+      seriesTitle: true,
+    },
+  });
+
+  const map = new Map<string, SeriesSummary>();
+  for (const row of rows) {
+    if (!row.seriesSlug || !row.seriesTitle) continue;
+    const existing = map.get(row.seriesSlug);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      map.set(row.seriesSlug, {
+        slug: row.seriesSlug,
+        title: row.seriesTitle,
+        count: 1,
+      });
+    }
+  }
+
+  return [...map.values()].sort((a, b) => a.title.localeCompare(b.title));
+}
+
+export async function listPublicPostsBySeries(
+  seriesSlug: string,
+): Promise<{ series: SeriesSummary; posts: PostWithTags[] } | null> {
+  const rows = await db.query.posts.findMany({
+    where: and(
+      eq(posts.visibility, "public"),
+      eq(posts.seriesSlug, seriesSlug),
+    ),
+    orderBy: [asc(posts.seriesOrder), asc(posts.publishedAt), asc(posts.createdAt)],
+    with: {
+      postTags: {
+        with: { tag: true },
+      },
+    },
+  });
+
+  if (!rows.length) return null;
+
+  const mapped = rows.map((row) => mapPost(row, row.postTags));
+  const title = mapped[0]?.series?.title ?? seriesSlug;
+
+  return {
+    series: { slug: seriesSlug, title, count: mapped.length },
+    posts: mapped,
+  };
+}
+
+export async function getSeriesNeighbors(
+  post: PostWithTags,
+  options?: { includePrivate?: boolean },
+): Promise<{
+  previous: PostWithTags | null;
+  next: PostWithTags | null;
+  posts: PostWithTags[];
+}> {
+  if (!post.series) {
+    return { previous: null, next: null, posts: [] };
+  }
+
+  const seriesPosts = options?.includePrivate
+    ? await listSeriesPostsIncludingPrivate(post.series.slug)
+    : ((await listPublicPostsBySeries(post.series.slug))?.posts ?? []);
+
+  const index = seriesPosts.findIndex((item) => item.id === post.id);
+  if (index < 0) {
+    return { previous: null, next: null, posts: seriesPosts };
+  }
+
+  return {
+    previous: index > 0 ? seriesPosts[index - 1]! : null,
+    next: index < seriesPosts.length - 1 ? seriesPosts[index + 1]! : null,
+    posts: seriesPosts,
+  };
+}
+
+async function listSeriesPostsIncludingPrivate(
+  seriesSlug: string,
+): Promise<PostWithTags[]> {
+  const rows = await db.query.posts.findMany({
+    where: eq(posts.seriesSlug, seriesSlug),
+    orderBy: [asc(posts.seriesOrder), asc(posts.publishedAt), asc(posts.createdAt)],
+    with: {
+      postTags: {
+        with: { tag: true },
+      },
+    },
+  });
+  return rows.map((row) => mapPost(row, row.postTags));
+}
+
+export async function listRelatedPosts(
+  post: PostWithTags,
+  limit = 3,
+): Promise<PostWithTags[]> {
+  if (!post.tags.length) {
+    return [];
+  }
+
+  const tagIds = post.tags.map((tag) => tag.id);
+  const links = await db.query.postTags.findMany({
+    where: inArray(postTags.tagId, tagIds),
+  });
+
+  const overlap = new Map<string, number>();
+  for (const link of links) {
+    if (link.postId === post.id) continue;
+    overlap.set(link.postId, (overlap.get(link.postId) ?? 0) + 1);
+  }
+
+  const candidateIds = [...overlap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => id);
+
+  if (!candidateIds.length) return [];
+
+  const rows = await db.query.posts.findMany({
+    where: and(
+      inArray(posts.id, candidateIds),
+      eq(posts.visibility, "public"),
+      ne(posts.id, post.id),
+    ),
+    with: {
+      postTags: {
+        with: { tag: true },
+      },
+    },
+  });
+
+  const mapped = rows.map((row) => mapPost(row, row.postTags));
+  mapped.sort((a, b) => {
+    const scoreDiff = (overlap.get(b.id) ?? 0) - (overlap.get(a.id) ?? 0);
+    if (scoreDiff !== 0) return scoreDiff;
+    const aTime = (a.publishedAt ?? a.createdAt).getTime();
+    const bTime = (b.publishedAt ?? b.createdAt).getTime();
+    return bTime - aTime;
+  });
+
+  return mapped.slice(0, limit);
 }
 
 export type PostVersionRecord = {
@@ -425,6 +676,9 @@ export async function upsertFromParsed(
         bodyHtml: html,
         tocJson: JSON.stringify(toc),
         visibility,
+        seriesSlug: parsed.seriesSlug,
+        seriesTitle: parsed.seriesTitle,
+        seriesOrder: parsed.seriesOrder,
         publishedAt:
           visibility === "public"
             ? existing.publishedAt ?? publishedAt ?? now
@@ -460,6 +714,9 @@ export async function upsertFromParsed(
     bodyHtml: html,
     tocJson: JSON.stringify(toc),
     visibility,
+    seriesSlug: parsed.seriesSlug,
+    seriesTitle: parsed.seriesTitle,
+    seriesOrder: parsed.seriesOrder,
     publishedAt: visibility === "public" ? publishedAt ?? now : publishedAt,
     createdAt: now,
     updatedAt: now,
@@ -521,6 +778,9 @@ export async function updatePostMeta(
     visibility?: Visibility;
     tags?: string[];
     bodyMd?: string;
+    seriesSlug?: string | null;
+    seriesTitle?: string | null;
+    seriesOrder?: number | null;
   },
   options?: { version?: VersionKind | null },
 ): Promise<PostWithTags | null> {
@@ -538,6 +798,32 @@ export async function updatePostMeta(
   const slug = data.slug ?? existing.slug;
   const excerpt = data.excerpt ?? existing.excerpt;
   const tagNames = data.tags ?? existing.tags.map((tag) => tag.name);
+
+  const nextSeriesSlug =
+    data.seriesSlug !== undefined
+      ? data.seriesSlug?.trim()
+        ? slugifyTag(data.seriesSlug)
+        : null
+      : existing.series?.slug ?? null;
+  const nextSeriesTitle =
+    data.seriesTitle !== undefined
+      ? data.seriesTitle?.trim() || null
+      : existing.series?.title ?? null;
+  const nextSeriesOrder =
+    data.seriesOrder !== undefined
+      ? data.seriesOrder
+      : existing.series?.order ?? null;
+
+  const seriesSlug = nextSeriesSlug;
+  const seriesTitle = seriesSlug
+    ? nextSeriesTitle ||
+      seriesSlug
+        .split("-")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ")
+    : null;
+  const seriesOrder = seriesSlug ? nextSeriesOrder : null;
+
   const now = new Date();
 
   await db
@@ -550,6 +836,9 @@ export async function updatePostMeta(
       bodyHtml: html,
       tocJson: JSON.stringify(toc),
       visibility,
+      seriesSlug,
+      seriesTitle,
+      seriesOrder,
       publishedAt:
         visibility === "public"
           ? existing.publishedAt ?? now

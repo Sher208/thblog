@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useLinkStatus } from "next/link";
 import { Loader2 } from "lucide-react";
 import type { PostWithTags } from "@/lib/posts";
+import { formatReadingTime } from "@/lib/reading-time";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -74,22 +75,35 @@ export function PostList({
                     <PostLinkContents title={post.title} />
                   </Link>
                 </h2>
-                {date ? (
-                  <time
-                    dateTime={toDateTime(date)}
-                    className="shrink-0 text-sm tabular-nums text-muted-foreground"
-                  >
-                    {formatDate(date)}
-                  </time>
-                ) : null}
+                <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm tabular-nums text-muted-foreground">
+                  {date ? (
+                    <time dateTime={toDateTime(date)}>{formatDate(date)}</time>
+                  ) : null}
+                  <span aria-hidden>·</span>
+                  <span>{formatReadingTime(post.readingMinutes)}</span>
+                </div>
               </div>
               {post.excerpt ? (
                 <p className="mt-2.5 max-w-xl text-base leading-relaxed text-muted-foreground">
                   {post.excerpt}
                 </p>
               ) : null}
-              {post.tags.length ? (
+              {post.series || post.tags.length ? (
                 <ul className="relative z-10 mt-3.5 flex flex-wrap gap-2">
+                  {post.series ? (
+                    <li>
+                      <Badge
+                        variant="outline"
+                        render={<Link href={`/series/${post.series.slug}`} />}
+                        className="no-underline"
+                      >
+                        {post.series.title}
+                        {post.series.order != null
+                          ? ` · ${post.series.order}`
+                          : ""}
+                      </Badge>
+                    </li>
+                  ) : null}
                   {post.tags.map((tag) => (
                     <li key={tag.id}>
                       <Badge

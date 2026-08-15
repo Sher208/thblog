@@ -14,6 +14,9 @@ slug: two-sum-hash-map
 tags: [arrays, hash-map]
 excerpt: Find two numbers that add up to a target in O(n) with a complement map.
 visibility: public
+series: array-patterns
+seriesTitle: Array Patterns
+seriesOrder: 1
 ---
 
 ## Problem
@@ -54,12 +57,53 @@ function twoSum(nums: number[], target: number): number[] {
 - Space: \`O(n)\`
 `;
 
+const SAMPLE_PUBLIC_TWO = `---
+title: Contains Duplicate — Set Pattern
+slug: contains-duplicate-set
+tags: [arrays, hash-map]
+excerpt: Detect duplicates in one pass with a set.
+visibility: public
+series: array-patterns
+seriesTitle: Array Patterns
+seriesOrder: 2
+---
+
+## Problem
+
+Given an integer array \`nums\`, return \`true\` if any value appears at least twice.
+
+## Pattern
+
+Keep a set of values seen so far. If the current value is already in the set, you found a duplicate.
+
+## Solution
+
+\`\`\`ts
+function containsDuplicate(nums: number[]): boolean {
+  const seen = new Set<number>();
+  for (const n of nums) {
+    if (seen.has(n)) return true;
+    seen.add(n);
+  }
+  return false;
+}
+\`\`\`
+
+## Complexity
+
+- Time: \`O(n)\`
+- Space: \`O(n)\`
+`;
+
 const SAMPLE_PRIVATE = `---
 title: Draft — Sliding Window Template
 slug: sliding-window-template
 tags: [arrays, sliding-window]
 excerpt: Private draft of the fixed and variable sliding window skeleton.
 visibility: private
+series: array-patterns
+seriesTitle: Array Patterns
+seriesOrder: 3
 ---
 
 ## When to use
@@ -129,9 +173,16 @@ async function ensureAdmin() {
 }
 
 async function seedPosts() {
+  // Opt-in only — avoids polluting an existing blog with sample notes.
+  if (process.env.SEED_SAMPLE_POSTS !== "true") {
+    console.log("Skipping sample posts (set SEED_SAMPLE_POSTS=true to enable)");
+    return;
+  }
+
   await createPostFromMarkdown(SAMPLE_PUBLIC, "two-sum.md");
+  await createPostFromMarkdown(SAMPLE_PUBLIC_TWO, "contains-duplicate.md");
   await createPostFromMarkdown(SAMPLE_PRIVATE, "sliding-window.md");
-  console.log("Seeded sample posts (1 public, 1 private)");
+  console.log("Seeded sample posts (2 public, 1 private)");
 }
 
 async function main() {

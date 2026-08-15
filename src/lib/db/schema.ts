@@ -100,6 +100,9 @@ export const posts = sqliteTable(
     visibility: text("visibility", { enum: ["public", "private"] })
       .notNull()
       .default("private"),
+    seriesSlug: text("series_slug"),
+    seriesTitle: text("series_title"),
+    seriesOrder: integer("series_order"),
     publishedAt: integer("published_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
@@ -113,6 +116,7 @@ export const posts = sqliteTable(
       table.visibility,
       table.publishedAt,
     ),
+    index("posts_series_slug_order_idx").on(table.seriesSlug, table.seriesOrder),
   ],
 );
 

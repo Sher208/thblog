@@ -94,6 +94,9 @@ export async function PATCH(request: Request) {
     excerpt?: string;
     tags?: string[];
     bodyMd?: string;
+    seriesSlug?: string | null;
+    seriesTitle?: string | null;
+    seriesOrder?: number | null;
     version?: "manual" | "draft" | null;
   };
 
@@ -108,7 +111,10 @@ export async function PATCH(request: Request) {
       body.slug === undefined &&
       body.excerpt === undefined &&
       body.tags === undefined &&
-      body.bodyMd === undefined
+      body.bodyMd === undefined &&
+      body.seriesSlug === undefined &&
+      body.seriesTitle === undefined &&
+      body.seriesOrder === undefined
     ) {
       const post = await updatePostVisibility(body.id, body.visibility);
       if (!post) {
@@ -126,6 +132,9 @@ export async function PATCH(request: Request) {
         visibility: body.visibility,
         tags: body.tags,
         bodyMd: body.bodyMd,
+        seriesSlug: body.seriesSlug,
+        seriesTitle: body.seriesTitle,
+        seriesOrder: body.seriesOrder,
       },
       { version: body.version ?? "manual" },
     );

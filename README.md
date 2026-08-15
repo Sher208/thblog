@@ -37,6 +37,9 @@ slug: two-sum
 tags: [arrays, hash-map]
 excerpt: Pattern — hashmap for complements
 visibility: private
+series: array-patterns
+seriesTitle: Array Patterns
+seriesOrder: 1
 ---
 
 ## Pattern
@@ -44,7 +47,7 @@ visibility: private
 Your notes and code here.
 ```
 
-Upload the file in **Admin**. Visibility in frontmatter is applied on create; you can flip **public / private** anytime in the admin list.
+Upload the file in **Admin**. Visibility in frontmatter is applied on create; you can flip **public / private** anytime in the admin list. Optional `series` / `seriesTitle` / `seriesOrder` group posts into multi-part reading paths.
 
 ## Visibility rules
 

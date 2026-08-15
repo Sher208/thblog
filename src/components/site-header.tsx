@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ThemeToggle } from "./theme-provider";
+import { SearchDialog } from "@/components/search-dialog";
 import { buttonVariants } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { authClient } from "@/lib/auth-client";
@@ -29,6 +30,15 @@ export function SiteHeader({ brand = "thblog" }: { brand?: string }) {
           >
             Topics
           </Link>
+          <Link
+            href="/series"
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "text-muted-foreground no-underline",
+            )}
+          >
+            Series
+          </Link>
           {session ? (
             <Link
               href="/admin"
@@ -41,6 +51,7 @@ export function SiteHeader({ brand = "thblog" }: { brand?: string }) {
             </Link>
           ) : null}
           <Separator orientation="vertical" className="mx-1.5 h-4!" />
+          <SearchDialog />
           <ThemeToggle />
         </nav>
       </div>
