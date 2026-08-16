@@ -28,6 +28,13 @@ export function ProseContent({
     if (!root) return;
     const container = root;
 
+    for (const anchor of root.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+      const href = anchor.getAttribute("href");
+      if (!href || href.startsWith("#")) continue;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+    }
+
     async function handleClick(event: MouseEvent) {
       const target = event.target as HTMLElement | null;
       const button = target?.closest<HTMLButtonElement>("[data-code-copy-btn]");
