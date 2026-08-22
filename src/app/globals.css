@@ -454,6 +454,30 @@ a {
   font-weight: 600;
 }
 
+.prose-blog mark.annotation-mark {
+  background: color-mix(in oklch, oklch(0.88 0.12 95) 72%, transparent);
+  color: inherit;
+  border-radius: 0.15em;
+  padding: 0.05em 0;
+  cursor: pointer;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.prose-blog mark.annotation-mark[data-kind="note"] {
+  background: color-mix(in oklch, oklch(0.86 0.1 145) 65%, transparent);
+  box-shadow: inset 0 -0.12em 0 color-mix(in oklch, oklch(0.55 0.12 145) 55%, transparent);
+}
+
+.dark .prose-blog mark.annotation-mark {
+  background: color-mix(in oklch, oklch(0.55 0.12 95) 45%, transparent);
+}
+
+.dark .prose-blog mark.annotation-mark[data-kind="note"] {
+  background: color-mix(in oklch, oklch(0.5 0.1 145) 40%, transparent);
+  box-shadow: inset 0 -0.12em 0 color-mix(in oklch, oklch(0.7 0.1 145) 45%, transparent);
+}
+
 @keyframes fade-up {
   from {
     opacity: 0;

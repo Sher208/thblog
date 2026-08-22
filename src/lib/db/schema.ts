@@ -198,8 +198,52 @@ export const postVersionsRelations = relations(postVersions, ({ one }) => ({
   }),
 }));
 
+export const annotations = sqliteTable(
+  "annotations",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    postId: text("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["highlight", "note"] }).notNull(),
+    body: text("body").notNull().default(""),
+    quote: text("quote").notNull(),
+    prefix: text("prefix").notNull().default(""),
+    suffix: text("suffix").notNull().default(""),
+    startOffset: integer("start_offset").notNull().default(0),
+    endOffset: integer("end_offset").notNull().default(0),
+    color: text("color").notNull().default("amber"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
+  },
+  (table) => [
+    index("annotations_user_post_idx").on(table.userId, table.postId),
+    index("annotations_post_id_idx").on(table.postId),
+  ],
+);
+
+export const annotationsRelations = relations(annotations, ({ one }) => ({
+  user: one(user, {
+    fields: [annotations.userId],
+    references: [user.id],
+  }),
+  post: one(posts, {
+    fields: [annotations.postId],
+    references: [posts.id],
+  }),
+}));
+
 export type Post = typeof posts.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
 export type PostVersion = typeof postVersions.$inferSelect;
+export type AnnotationRow = typeof annotations.$inferSelect;
 export type Visibility = "public" | "private";
 export type VersionKind = "manual" | "draft";
+export type AnnotationKind = "highlight" | "note";

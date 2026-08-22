@@ -44,6 +44,7 @@ import {
 import { extractTocFromMarkdown, type TocItem } from "@/lib/toc";
 import { renderMarkdownPreview } from "@/lib/markdown-preview";
 import { serializePostToMarkdown } from "@/lib/serialize-post-markdown";
+import { AnnotationLayer } from "@/components/annotation-layer";
 import { ProseContent } from "@/components/prose-content";
 import { cn } from "@/lib/utils";
 
@@ -1590,7 +1591,7 @@ export function PostWithEditor({
           </div>
         ) : null}
 
-        <ProseContent html={post.bodyHtml} />
+        <AnnotationLayer postId={post.id} html={post.bodyHtml} />
 
         {post.series && seriesNav ? (
           <SeriesNav
